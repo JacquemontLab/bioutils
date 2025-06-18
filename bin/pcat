@@ -1,0 +1,61 @@
+#!/bin/bash
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Prints select number of rows from parquet file in tsv to STDOUT.
+
+Options:
+  -i, --input FILE      Input file path (required)
+  -n, --num NUMBER      Number of rows to print
+  -v, --verbose         Enable verbose output. Shows ducktable and SQL command.
+  -h, --help            Show this help message and exit
+
+Example:
+  $(basename "$0") --input data.txt --verbose
+EOF
+}
+
+# Error message and exit
+die() {
+  echo "[ERROR] $*" >&2
+  exit 1
+}
+
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i|--input)
+      INPUT_FILE="$2"
+      shift 2
+      ;;
+    -n|--num)
+      NUM="$2"
+      shift 2
+      ;;
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      die "Unknown option: $1"
+      ;;
+    *)
+      die "Unexpected argument: $1"
+      ;;
+  esac
+done
+
+[[ -z "$INPUT_FILE" ]] && die "Input file is required. Use -i or --input."
+
+if [[ "$VERBOSE" -eq 1 ]]; then
+duckdb -echo -c "SELECT * FROM "$INPUT_FILE" LIMIT "$NUM";"
+else
+duckdb -csv -c "SELECT * FROM "$INPUT_FILE" LIMIT "$NUM";" | awk 'BEGIN {FS=","; OFS="\t"} {$1=$1; print}'
+fi

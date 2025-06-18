@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Generate structure of directory in STUDY_DIRECTORY
+
+#      project_name/
+#      ├── data/                # Raw and processed data
+#      │   ├── raw/             # Original raw data (read-only)
+#      │   └── processed/       # Processed datasets
+#      ├── scripts/             # Code and scripts
+#      │   ├── preprocessing/   # Preprocessing scripts
+#      │   └── analysis/        # Analysis scripts
+#      │   └── workflow/        # Workflow orchestration (e.g., pipelines)
+#      ├── results/             # Analysis results
+#      │   ├── figures/         # Plots and images
+#      │   ├── tables/          # Summary statistics
+#      │   └── reports/         # Reports
+#      ├── logs/                # Logs related to the entire project
+#      ├── software/            # External or custom software
+#      ├── README.md            # Project overview
+
+
+PROJECTS_DIRECTORY=/lustre06/project/6008022/All_user_common_folder/STUDY_DIRECTORY/
+
+# Prompt the user for the project directory name
+read -p "Enter the project directory name: " project_name
+
+# Set the full project path
+project_path="$PROJECTS_DIRECTORY/$project_name"
+
+# Create the directory structure
+mkdir -p "$project_path"/{data/{raw,processed},scripts/{preprocessing,analysis,workflow},results/{figures,tables,reports},logs,software}
+
+# Create the README.md file with the specified template
+readme_path="$project_path/README.md"
+cat << EOF > "$readme_path"
+# Project Title: TO FILL ASAP
+
+## Description: TO FILL ASAP
+
+## Start Date: $(date '+%Y-%m-%d')
+
+## Team: TO FILL ASAP
+
+EOF
+
+# Notify the user
+
+chmod -R ug+rwx $project_path
+
+echo "Project structure created successfully!"
+echo "README.md initialized at $readme_path"
+

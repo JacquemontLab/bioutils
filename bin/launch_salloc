@@ -1,0 +1,16 @@
+#!/bin/bash
+# Script to request an interactive job allocation with specific resources on the cluster using salloc.
+#
+# Usage: ./script_name.sh <hours> <cpus> <mem_per_cpu_MB>
+#
+# Arguments:
+#   $1: Hours of the job (integer, e.g., 1 for 1 hour)
+#   $2: Number of CPUs requested
+#   $3: Memory per CPU in megabytes (MB)
+#
+# Example:
+#   ./script_name.sh 2 8 8000
+#   Requests a 2-hour job with 8 CPUs and 8000MB memory per CPU.
+#
+
+salloc --job-name=ssh_tunneling --account=rrg-jacquese --time=$1:00:00 --tasks=1 --cpus-per-task=$2 --mem-per-cpu=$3MB

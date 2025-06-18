@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Script to set default ACL permissions recursively on a directory for a specific user.
+#
+# Arguments:
+#   $1: The username to set permissions for
+#   $2: The target directory path
+#
+# The script sets read, write, and execute (rwx) permissions as the default ACL for the specified user
+# on the directory and all its contents recursively.
+#
+# Usage:
+#   ./script_name.sh username /path/to/directory
+#
+
+setfacl -R -d -m u:$1:rwx $2

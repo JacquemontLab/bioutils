@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Script to convert a Markdown file to PDF using grip and wkhtmltopdf.
+#
+# Requirements:
+#   - grip: to render Markdown to HTML
+#   - wkhtmltopdf: to convert HTML to PDF
+#
+# Usage:
+#   ./script_name.sh input.md output.pdf
+#
+# Arguments:
+#   $1: Input Markdown file (.md)
+#   $2: Output PDF file (.pdf)
+#
+# The script:
+#   1. Checks if grip and wkhtmltopdf are installed.
+#   2. Converts the Markdown file to a temporary HTML file.
+#   3. Converts the HTML file to PDF.
+#   4. Cleans up the temporary HTML file.
+#   5. Prints confirmation of PDF creation.
+
+
+# Check if required commands are available
+command -v grip >/dev/null 2>&1 || { echo >&2 "grip is not installed. Aborting."; exit 1; }
+command -v wkhtmltopdf >/dev/null 2>&1 || { echo >&2 "wkhtmltopdf is not installed. Aborting."; exit 1; }
+
+# Check for input and output file arguments
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 input.md output.pdf"
+    exit 1
+fi
+
+INPUT_MD="$1"
+OUTPUT_PDF="$2"
+TEMP_HTML="file_to.html"
+
+# Convert Markdown to HTML using grip
+grip "$INPUT_MD" --export "$TEMP_HTML"
+
+# Convert HTML to PDF using wkhtmltopdf
+wkhtmltopdf --enable-local-file-access "$TEMP_HTML" "$OUTPUT_PDF"
+
+# Remove temporary HTML file
+rm -f "$TEMP_HTML"
+
+echo "PDF created: $OUTPUT_PDF"
+

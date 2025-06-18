@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# Description:
+#   This script merges multiple files into a single file.
+#   It processes files in parallel by splitting them into chunks, using multiple CPU cores 
+#   to speed up merging. Only the header from the first file is retained.
+#
+# Author: Florian Bénitière
+# Date: June 2025
+
+# Usage function to display help
+usage() {
+    echo "Usage: $0 <input_dir> <output_file> <chunk_size> <num_cores>"
+    echo "  input_dir   - Directory containing input files"
+    echo "  output_file - Name of the final merged output file"
+    echo "  chunk_size  - Number of files per chunk (integer)"
+    echo "  num_cores   - Number of parallel jobs (integer)"
+    exit 1
+}
+
+# Check if all arguments are provided
+if [ $# -ne 4 ]; then
+    echo "Error: Missing arguments."
+    usage
+fi
+
+# Config
+input_dir=$1     # directory with input files
+output_file=$2 # output file name
+chunk_size=$3 # number of files per chunk
+num_cores=$4 # max parallel jobs
+
+# Get all input files (modify the glob to your files)
+files_array=("$input_dir"/*)
+
+num_files=${#files_array[@]}
+num_chunks=$(( (num_files + chunk_size - 1) / chunk_size ))
+
+echo "Merging $num_files files in $num_chunks chunks, chunk size: $chunk_size"
+
+process_chunk() {
+    chunk_index=$1
+    start_index=$(( chunk_index * chunk_size ))
+
+    chunk_files=("${files_array[@]:$start_index:$chunk_size}")
+
+    chunk_output="merged_chunk_${chunk_index}.txt"
+
+    echo "Processing chunk $chunk_index"
+
+    # Take header from first file of first chunk only
+    if [[ $chunk_index -eq 0 ]]; then
+        head -n 1 "${chunk_files[0]}" > "$chunk_output"
+        # Append all files skipping first line
+        for f in "${chunk_files[@]}"; do
+            tail -n +2 "$f"
+        done >> "$chunk_output"
+    else
+        # For other chunks, skip all headers for all files
+        for f in "${chunk_files[@]}"; do
+            tail -n +2 "$f"
+        done > "$chunk_output"
+    fi
+}
+
+# Run the merging process in parallel using background jobs with a limit of available cores
+current_jobs=0
+for chunk_index in $(seq 0 $((num_chunks - 1))); do
+    # Start a background job
+    process_chunk $chunk_index &
+    
+    # Increment the number of current jobs
+    current_jobs=$((current_jobs + 1))
+    
+    # Wait if we've reached the maximum number of concurrent jobs (based on available cores)
+    if [ $current_jobs -ge $num_cores ]; then
+        wait -n  # Wait for any background job to finish
+        current_jobs=$((current_jobs - 1))  # Decrease the job count
+    fi
+done
+
+# Wait for all remaining background jobs to finish
+wait
+
+echo "Merging chunk files into final output..."
+
+cat merged_chunk_*.txt > "$output_file"
+
+echo "Cleaning up chunk files..."
+rm merged_chunk_*.txt
+
+echo "Done! Final merged file: $output_file"

@@ -1,0 +1,55 @@
+#!/bin/bash
+
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Calculate MEAN, MEDIAN  and quantiles for each column from parquet file.
+
+Can be computationally expensive. Use with caution.
+
+Options:
+  -i, --input FILE      Input file path (required)
+  -v, --verbose         Enable verbose output
+  -h, --help            Show this help message and exit
+
+Example:
+  $(basename "$0") --input data.txt --verbose
+EOF
+}
+
+# Error message and exit
+die() {
+  echo "[ERROR] $*" >&2
+  exit 1
+}
+
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i|--input)
+      INPUT_FILE="$2"
+      shift 2
+      ;;
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      die "Unknown option: $1"
+      ;;
+    *)
+      die "Unexpected argument: $1"
+      ;;
+  esac
+done
+
+[[ -z "$INPUT_FILE" ]] && die "Input file is required. Use -i or --input."
+
+duckdb -echo -c "SUMMARIZE (SELECT * FROM "$INPUT_FILE");"
