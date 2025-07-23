@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# ------------------------------------------------------------------------------
+# Script Name: run_with_time.sh
+#
+# Description:
+#   Wraps any command to monitor and display execution time, CPU usage,
+#   and peak memory consumption using /usr/bin/time.
+#
+# Usage:
+#   ./run_with_time.sh <your_command> [args...]
+#
+# Example:
+#   ./run_with_time.sh king -b input.bed --related --cpus 4
+# ------------------------------------------------------------------------------
+
+if ! command -v /usr/bin/time &> /dev/null; then
+  echo "❌ Error: /usr/bin/time not found on this system."
+  exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <command> [args...]"
+  exit 1
+fi
+
+# Run the command with /usr/bin/time and custom format
+/usr/bin/time -f "⏱️ view | Time: %E | CPU: %P | Mem: %M KB" "$@"
