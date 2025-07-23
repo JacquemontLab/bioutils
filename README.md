@@ -35,3 +35,12 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
 
 * **duckdb**
   DuckDB executable.
+  
+* **king**
+  King 2.3.2 executable.
+  
+* **run_with_time**
+  Wraps any command to monitor and display execution time, CPU usage, and peak memory consumption using /usr/bin/time.
+  
+* **extract_king_trios.sh**
+  Runs KING on a PLINK binary dataset to extract trio information (FamilyID, SampleID, FatherID, MotherID)
