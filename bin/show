@@ -50,5 +50,5 @@ done
 
 [[ -z "$INPUT_FILE" ]] && die "Input file is required. Use -i or --input."
 
-duckdb -echo  -c "DESCRIBE (SELECT * FROM "$INPUT_FILE");"
+duckdb -echo  -c "DESCRIBE (SELECT * FROM read_parquet('${INPUT_FILE}'));"
 

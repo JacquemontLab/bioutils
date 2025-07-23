@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Set default
+NUM=10
+
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
@@ -55,7 +58,8 @@ done
 [[ -z "$INPUT_FILE" ]] && die "Input file is required. Use -i or --input."
 
 if [[ "$VERBOSE" -eq 1 ]]; then
-duckdb -echo -c "SELECT * FROM "$INPUT_FILE" LIMIT "$NUM";"
+  duckdb -echo -c "SELECT * FROM read_parquet('${INPUT_FILE}') LIMIT ${NUM};"
 else
-duckdb -csv -c "SELECT * FROM "$INPUT_FILE" LIMIT "$NUM";" | awk 'BEGIN {FS=","; OFS="\t"} {$1=$1; print}'
+  duckdb -csv -c "SELECT * FROM read_parquet('${INPUT_FILE}') LIMIT ${NUM};" | awk 'BEGIN {FS=","; OFS="\t"} {$1=$1; print}'
 fi
+
