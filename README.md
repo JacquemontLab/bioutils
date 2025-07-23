@@ -1,3 +1,5 @@
+[![Jacquemont's Lab Header](labheader.png)](https://www.jacquemont-lab.org/)
+
 # bioutils
 
 A collection of commonly used bioinformatics Bash scripts developed and maintained by our lab to streamline data processing and project management tasks.
