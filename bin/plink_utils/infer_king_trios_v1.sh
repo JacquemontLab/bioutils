@@ -1,12 +1,14 @@
 #!/bin/bash
 
+
 # ------------------------------------------------------------------------------
 # Script Name: extract_king_trios.sh
+# Author: Florian Bénitière
+# Date: 2025-07-28
 #
 # Description:
 #   Runs KING on a PLINK binary dataset and parses the KING relationship log file
-#   to extract trio information (SampleID, FatherID, MotherID) along with the
-#   corresponding FamilyID.
+#   to extract trio information (FamilyID, SampleID, FatherID, MotherID)
 #
 # Usage:
 #   ./extract_king_trios.sh plink_prefix [output_tsv_file]
@@ -43,9 +45,9 @@ cpus="${SLURM_CPUS_ON_NODE:-$(nproc)}"
 echo "💻 Running KING with $cpus cores..."
 
 # --------------------- Run KING ---------------------
-king -b "${plink_bed}.bed" --related --build --prefix king_out --cpus "$cpus"
+king -b "${plink_bed}.bed" --build --degree 1 --cpus "$cpus" --prefix temp_king_out
 
-INPUT_LOG="king_outbuild.log"
+INPUT_LOG="temp_king_outbuild.log"
 
 # --------------------- Parse KING Output ---------------------
 awk '
@@ -79,7 +81,7 @@ awk '
   cat -
 ) > "$OUTPUT_TSV"
 
-rm king_outupdateparents.txt king_outupdateids.txt king_outallsegs.txt king_outX.kin0 king_out.kin0 king_outbuild.log
+rm -f temp_king_outupdateparents.txt temp_king_outupdateids.txt temp_king_outallsegs.txt temp_king_outX.kin0 temp_king_outbuild.log temp_king_output_pcplot.Rout temp_king_output_ancestryplot.Rout
 
 echo "✅ Trio table successfully written to: $OUTPUT_TSV"
 
