@@ -74,12 +74,30 @@ plink_command = (
 
 subprocess.run(plink_command, shell=True, check=True)
 
+# Convert space-separated to tab-separated
+cmd = r"""awk 'BEGIN {OFS="\t"} {$1=$1; print}' temp_plink_sexcheck.sexcheck > temp_plink_sexcheck.sexcheck.tsv"""
+subprocess.run(cmd, shell=True, check=True)
+
 print("✅ PLINK check-sex finished successfully")
 
 # --------------------- Run KING ---------------------
+# First awk: copy col2 into col1 of .fam
+subprocess.run(
+    f"awk '{{ $1 = $2; print }}' OFS='\\t' {plink_prefix}.fam > tmp.fam",
+    shell=True, check=True, executable="/bin/bash"
+)
+
+# Second awk: remove character chr of .bim
+subprocess.run(
+    f"awk '{{ sub(/^chr/, \"\", $1); print }}' OFS='\\t' {plink_prefix}.bim > tmp.bim",
+    shell=True, check=True, executable="/bin/bash"
+)
+
 subprocess.run([
     "king",
     "-b", f"{plink_prefix}.bed",
+    "--fam", "tmp.fam",
+    "--bim", "tmp.bim",
     "--related",
     "--degree", "2",
     "--cpus", cpus,
@@ -104,18 +122,13 @@ else:
 family_king = family_king.filter(pl.col("InfType") != "UN")
 
 # PLINK sex check results
-plink_sexcheck_original = (
+plink_sexcheck = (
     pl.read_csv(
-        "temp_plink_sexcheck.sexcheck",
-        separator=" "
+        "temp_plink_sexcheck.sexcheck.tsv",
+        separator="\t"
     )
-    .select(["_duplicated_4","_duplicated_25"])   # IID and SNPSEX columns
+    .select(["IID","SNPSEX"])   # IID and SNPSEX columns
 )
-plink_sexcheck = plink_sexcheck_original.rename({
-    "_duplicated_4": "IID",
-    "_duplicated_25": "SNPSEX"
-})
-
 
 # --------------------- Filter Parent-Offspring Pairs ---------------------
 # Keep only parent-offspring relations
@@ -173,9 +186,9 @@ iid_with_parents = check_relation.select("ID1").rename({"ID1": "IID"}).unique()
 
 # --------------------- Assign Father and Mother ---------------------
 # Fathers: sex = 1
-paternal = dt.filter((pl.col("sex_ID2") == 1) & (pl.col("ID1").is_in(iid_with_parents["IID"])))
+paternal = dt.filter((pl.col("sex_ID2") == 1) & (pl.col("ID1").is_in(iid_with_parents["IID"].implode())))
 # Mothers: sex = 2
-maternal = dt.filter((pl.col("sex_ID2") == 2) & (pl.col("ID1").is_in(iid_with_parents["IID"])))
+maternal = dt.filter((pl.col("sex_ID2") == 2) & (pl.col("ID1").is_in(iid_with_parents["IID"].implode())))
 
 df = iid_with_parents.join(paternal.select(["ID1","ID2"]).rename({"ID1":"IID","ID2":"PID"}), on="IID", how="left")
 df = df.join(maternal.select(["ID1","ID2"]).rename({"ID1":"IID","ID2":"MID"}), on="IID", how="left")
@@ -227,7 +240,10 @@ files_to_remove = [
     "temp_plink_sexcheck.sexcheck",
     "temp_plink_sexcheck.nosex",
     "temp_plink_sexcheck.log",
-    "temp_plink_sexcheck.hh"
+    "temp_plink_sexcheck.hh",
+    "temp_plink_sexcheck.sexcheck.tsv",
+    "tmp.bim",
+    "tmp.fam"
 ]
 
 for f in files_to_remove:
