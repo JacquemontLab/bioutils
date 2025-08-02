@@ -174,7 +174,7 @@ parents_cnv.write_csv(parent_bed, separator="\t", include_header=False)
 # ------------------- Run bedtools intersect -------------------
 
 for ovlap in OVERLAPS:
-    bash_cmd = f"bedtools intersect -a {child_bed} -b {parent_bed} -f {ovlap} -r > intersect_ovlap{ovlap}.bed"
+    bash_cmd = f"bedtools intersect -a {child_bed} -b {parent_bed} -f {ovlap} -r -wa > intersect_ovlap{ovlap}.bed"
     print("Running command:\n", bash_cmd)
     subprocess.run(bash_cmd, shell=True, check=True)
 
