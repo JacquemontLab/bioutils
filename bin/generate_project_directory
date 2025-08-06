@@ -19,7 +19,7 @@
 #      ├── README.md            # Project overview
 
 
-PROJECTS_DIRECTORY=/lustre06/project/6008022/All_user_common_folder/STUDY_DIRECTORY/
+PROJECTS_DIRECTORY=/lustre09/project/6008022/All_user_common_folder/STUDY_DIRECTORY/
 
 # Prompt the user for the project directory name
 read -p "Enter the project directory name: " project_name

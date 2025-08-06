@@ -14,8 +14,8 @@
 #   ./run_with_time.sh king -b input.bed --related --cpus 4
 # ------------------------------------------------------------------------------
 
-if ! command -v /usr/bin/time &> /dev/null; then
-  echo "❌ Error: /usr/bin/time not found on this system."
+if ! command -v timedev &> /dev/null; then
+  echo "❌ Error: timedev not found on this system."
   exit 1
 fi
 
@@ -25,4 +25,4 @@ if [[ $# -lt 1 ]]; then
 fi
 
 # Run the command with /usr/bin/time and custom format
-/usr/bin/time -f "⏱️ view | Time: %E | CPU: %P | Mem: %M KB" "$@"
+timedev -f "⏱️ view | Time: %E | CPU: %P | Mem: %M KB" "$@"

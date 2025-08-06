@@ -6,11 +6,33 @@
 #   $1: The username to set permissions for
 #   $2: The target directory path
 #
-# The script sets read, write, and execute (rwx) permissions as the default ACL for the specified user
-# on the directory and all its contents recursively.
-#
 # Usage:
 #   ./script_name.sh username /path/to/directory
 #
 
-setfacl -R -d -m u:$1:rwx $2
+# Exit immediately if a command exits with a non-zero status
+set -e
+
+# Check if both arguments are provided
+if [ $# -ne 2 ]; then
+    echo "Error: Missing arguments."
+    echo "Usage: $0 username /path/to/directory"
+    exit 1
+fi
+
+USER=$1
+DIR=$2
+
+# Check if the directory exists
+if [ ! -d "$DIR" ]; then
+    echo "Error: Directory '$DIR' does not exist."
+    exit 1
+fi
+
+# Apply ACL permissions
+if setfacl -R -d -m u:"$USER":rwx "$DIR"; then
+    echo "Default ACL permissions set for user '$USER' on directory '$DIR'."
+else
+    echo "Error: Failed to set ACL permissions."
+    exit 1
+fi
