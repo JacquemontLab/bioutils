@@ -68,8 +68,13 @@ OVERLAPS = [float(x) for x in args.overlap.split(",")]
 
 # ------------------- Filter CNV Calls -------------------
 
-bash_cmd = f"""zcat {FILE_CNV} | awk 'FNR==NR {{ids[$1]; ids[$2]; ids[$3]; next}} FNR==1 || $1 in ids' \
-{PEDIGREE_FILE} - > filtered.tsv"""
+bash_cmd = f"""
+if [[ "{FILE_CNV}" == *.gz ]]; then
+  zcat {FILE_CNV} | awk 'FNR==NR {{ids[$1]; ids[$2]; ids[$3]; next}} FNR==1 || $1 in ids' {PEDIGREE_FILE} - > filtered.tsv
+else
+  awk 'FNR==NR {{ids[$1]; ids[$2]; ids[$3]; next}} FNR==1 || $1 in ids' {PEDIGREE_FILE} {FILE_CNV} > filtered.tsv
+fi
+"""
 
 print("Running command:\n", bash_cmd)
 subprocess.run(bash_cmd, shell=True, check=True)
