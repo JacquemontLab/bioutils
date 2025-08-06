@@ -33,14 +33,35 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
 * **generate\_project\_directory**
   Interactively creates a standardized project directory structure with subfolders for data, scripts, results, logs, and software, initializes a README.md with placeholders and current date, and sets user/group permissions.
 
+* **run_with_time**
+  Wraps any command to monitor and display execution time, CPU usage, and peak memory consumption using /usr/bin/time.
+  
+
+### plink_utils
+* **filter_merge_missing.sh**
+  Merge plink files located in the same directory, and can apply filters.
+
+* **intersect_merge_plink.sh**
+  Merge plink files on there shared SNPs (chr position alt ref).
+
+* **remove_dup_position_plink.sh**
+  Remove SNPs sharing the same chromosome+position, keeping only the SNP with the best call rate.
+
+
+### cnv_utils
+* **cnv_trio_inheritance.py**
+  This pipeline analyzes the inheritance of CNVs (Copy Number Variants) in trio datasets.
+
+## Program available
+
 * **duckdb**
   DuckDB executable.
   
 * **king**
   King 2.3.2 executable.
-  
-* **run_with_time**
-  Wraps any command to monitor and display execution time, CPU usage, and peak memory consumption using /usr/bin/time.
-  
-* **extract_king_trios.sh**
-  Runs KING on a PLINK binary dataset to extract trio information (FamilyID, SampleID, FatherID, MotherID)
+
+* **plink**
+  Plink 1.9 executable.
+
+* **timedev**
+  Time executable that measures how long another command takes to run and reports resource usage.
