@@ -22,7 +22,6 @@
 
 
 # Check if required commands are available
-command -v grip >/dev/null 2>&1 || { echo >&2 "grip is not installed. Aborting."; exit 1; }
 command -v wkhtmltopdf >/dev/null 2>&1 || { echo >&2 "wkhtmltopdf is not installed. Aborting."; exit 1; }
 
 # Check for input and output file arguments
@@ -33,16 +32,29 @@ fi
 
 INPUT_MD="$1"
 OUTPUT_PDF="$2"
-TEMP_HTML="file_to.html"
+TEMP_HTML="temp.html"
+TEMP_CSS="temp.css"
 
-# Convert Markdown to HTML using grip
-grip "$INPUT_MD" --export "$TEMP_HTML"
+# Create a temporary CSS file
+cat <<EOT > "$TEMP_CSS"
+body {
+    font-size: 12pt;
+    margin: 10mm;
+}
+EOT
 
-# Convert HTML to PDF using wkhtmltopdf
+# Convert Markdown to HTML
+pandoc "$INPUT_MD" -o "$TEMP_HTML" -s \
+    --from markdown \
+    --to html5 \
+    -V charset=utf-8 \
+    -c "$TEMP_CSS"
+
+# Convert HTML to PDF
 wkhtmltopdf --enable-local-file-access "$TEMP_HTML" "$OUTPUT_PDF"
 
-# Remove temporary HTML file
-rm -f "$TEMP_HTML"
+# Cleanup
+rm -f "$TEMP_HTML" "$TEMP_CSS"
 
 echo "PDF created: $OUTPUT_PDF"
 

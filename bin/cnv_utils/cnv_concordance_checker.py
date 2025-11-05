@@ -52,9 +52,18 @@ from pathlib import Path
 
 
 def load_data(file_path: Path) -> pd.DataFrame:
-    """Load TSV file into a DataFrame."""
+    """Load TSV or Parquet file into a DataFrame."""
     print(f"[INFO] Loading data from {file_path} ...")
-    return pd.read_csv(file_path, sep="\t", low_memory=False)
+    suffix = file_path.suffix.lower()
+
+    if suffix in [".tsv", ".txt"]:
+        return pd.read_csv(file_path, sep="\t", low_memory=False)
+    elif suffix == ".csv":
+        return pd.read_csv(file_path, low_memory=False)
+    elif suffix == ".parquet":
+        return pd.read_parquet(file_path)
+    else:
+        raise ValueError(f"Unsupported file format: {file_path}. Must be TSV, CSV, or Parquet.")
 
 
 def add_row_ids(df: pd.DataFrame) -> pd.DataFrame:

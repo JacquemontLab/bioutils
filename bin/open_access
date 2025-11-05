@@ -29,9 +29,9 @@ if [ ! -d "$DIR" ]; then
     exit 1
 fi
 
-# Apply ACL permissions
-if setfacl -R -d -m u:"$USER":rwx "$DIR"; then
-    echo "Default ACL permissions set for user '$USER' on directory '$DIR'."
+# Apply ACL permissions (both immediate and default) recursively
+if setfacl -R -m u:"$USER":rwx "$DIR" && setfacl -R -d -m u:"$USER":rwx "$DIR"; then
+    echo "ACL permissions (immediate + default) set for user '$USER' on directory '$DIR'."
 else
     echo "Error: Failed to set ACL permissions."
     exit 1

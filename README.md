@@ -52,6 +52,10 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
 * **cnv_trio_inheritance.py**
   This pipeline analyzes the inheritance of CNVs (Copy Number Variants) in trio datasets.
 
+* **cnv_concordance_checker.py**
+  This script compare two CNV datasets to assess Callrate and Precision of those dataset.
+
+
 ## Program available
 
 * **duckdb**
