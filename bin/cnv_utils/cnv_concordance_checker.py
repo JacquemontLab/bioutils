@@ -85,9 +85,9 @@ def flag_overlaps(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         df_a.Chr,
         GREATEST(df_a.Start, df_b.Start) AS overlap_start,
         LEAST(df_a.End, df_b.End) AS overlap_end,
-        (LEAST(df_a.End, df_b.End) - GREATEST(df_a.Start, df_b.Start)) AS overlap_len,
-        (df_a.End - df_a.Start) AS len_a,
-        (df_b.End - df_b.Start) AS len_b
+        (LEAST(df_a.End, df_b.End) - GREATEST(df_a.Start, df_b.Start) +1) AS overlap_len,
+        (df_a.End - df_a.Start +1) AS len_a,
+        (df_b.End - df_b.Start +1) AS len_b
       FROM df_a
       JOIN df_b
         ON df_a.Chr = df_b.Chr
