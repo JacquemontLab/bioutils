@@ -9,7 +9,7 @@
 #   $3: Memory per CPU in megabytes (MB)
 #
 # Example:
-#   ./script_name.sh 2 8 8000
+#   ./launch_salloc 2 8 8000
 #   Requests a 2-hour job with 8 CPUs and 8000MB memory per CPU.
 #
 
