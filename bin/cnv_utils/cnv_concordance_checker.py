@@ -73,9 +73,9 @@ def add_row_ids(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def flag_overlaps(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Find reciprocal overlaps >= 50% between df_a and df_b."""
-    query = """
+def flag_overlaps(con: duckdb.DuckDBPyConnection, overlap_fraction: float) -> pd.DataFrame:
+    """Find reciprocal overlaps >= overlap_fraction% between df_a and df_b."""
+    query = f"""
     WITH overlaps_df AS (
       SELECT 
         df_a.rowid AS id_a,
@@ -100,7 +100,7 @@ def flag_overlaps(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
       id_a,
       id_b,
       CAST(
-        (overlap_len >= 0.5 * len_a AND overlap_len >= 0.5 * len_b) AS INTEGER
+        (overlap_len >= {overlap_fraction} * len_a AND overlap_len >= {overlap_fraction} * len_b) AS INTEGER
       ) AS reciprocal_overlap_flag
     FROM overlaps_df
     WHERE overlap_len > 0
@@ -125,20 +125,27 @@ def print_summary(df_a: pd.DataFrame, df_b: pd.DataFrame, name_a: str, name_b: s
     """Print summary statistics."""
     print("\n=== SUMMARY ===")
     for name, df in [(name_a, df_a), (name_b, df_b)]:
-        total = len(df)
-        ovlp = df["CNV_based_overlap"].sum()
-        gene = df["gene_based_overlap"].sum() if df["gene_based_overlap"].notna().any() else 0
-        both = ((df["CNV_based_overlap"] == 1) & (df["gene_based_overlap"] == 1)).sum() if df["gene_based_overlap"].notna().any() else 0
+        # Number of unique CNVs based on Chr, Start, End, Type
+        unique_cnvs = df.drop_duplicates(subset=["SampleID","Chr", "Start", "End", "Type"])
+        n_unique_cnvs = len(unique_cnvs)
 
-        print(f"{name}: {total} CNVs")
-        print(f"  CNV-overlap: {ovlp} ({ovlp / total * 100:.2f}%)")
-        if df["gene_based_overlap"].notna().any():
-            print(f"  Gene-overlap: {gene} ({gene / total * 100:.2f}%)")
-            print(f"  Both overlap types: {both} ({both / total * 100:.2f}%)")
-        print()
+        cnv_ovlp = df.drop_duplicates(subset=["SampleID","Chr", "Start", "End", "Type"])["CNV_based_overlap"].sum()
+
+        print(f"{name}: {n_unique_cnvs} CNVs")
+        print(f"  CNV-overlap: {cnv_ovlp} ({cnv_ovlp / n_unique_cnvs * 100:.2f}%)")
+
+        if "Gene_ID" in df.columns:
+            # Only consider rows where gene_based_overlap is not NA
+            gene_mask = df["Gene_ID"].notna()
+            gene_total = gene_mask.sum()  # number of rows with gene info
+
+            gene_ovlp = df["gene_based_overlap"].sum() if df["gene_based_overlap"].notna().any() else 0
+            print(f"  Gene-overlap: {gene_ovlp} ({gene_ovlp / gene_total * 100:.2f}%)")
+        
+            
 
 
-def main(file_a: Path, file_b: Path, out_a: Path, out_b: Path):
+def main(file_a: Path, file_b: Path, out_a: Path, out_b: Path, overlap_fraction: float):
     # Load data
     df_a = add_row_ids(load_data(file_a))
     df_b = add_row_ids(load_data(file_b))
@@ -149,8 +156,8 @@ def main(file_a: Path, file_b: Path, out_a: Path, out_b: Path):
     con.register("df_b", df_b)
 
     # Flag overlaps
-    print("[INFO] Computing reciprocal overlaps >= 50% ...")
-    overlaps_df = flag_overlaps(con)
+    print(f"[INFO] Computing reciprocal overlaps >= {overlap_fraction*100:.0f}% ...")
+    overlaps_df = flag_overlaps(con, overlap_fraction)
     df_a["CNV_based_overlap"] = 0
     df_b["CNV_based_overlap"] = 0
     df_a.loc[overlaps_df.loc[overlaps_df["reciprocal_overlap_flag"] == 1, "id_a"].unique(), "CNV_based_overlap"] = 1
@@ -177,11 +184,18 @@ def main(file_a: Path, file_b: Path, out_a: Path, out_b: Path):
     # Drop internal rowid before saving
     df_a = df_a.drop(columns=["rowid"])
     df_b = df_b.drop(columns=["rowid"])
+    # Save results if not empty
+    if out_a is not None:
+        print(f"[INFO] Saving results to {out_a} ...")
+        df_a.to_csv(out_a, sep="\t", index=False)
+    else:
+        print(f"[INFO] df_a is empty, skipping save for {out_a}.")
 
-    # Save results
-    print(f"[INFO] Saving results to {out_a} and {out_b} ...")
-    df_a.to_csv(out_a, sep="\t", index=False)
-    df_b.to_csv(out_b, sep="\t", index=False)
+    if out_b is not None:
+        print(f"[INFO] Saving results to {out_b} ...")
+        df_b.to_csv(out_a, sep="\t", index=False)
+    else:
+        print(f"[INFO] df_b is empty, skipping save for {out_b}.")
     print("[INFO] Done.")
 
 
@@ -190,9 +204,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare two CNV call files.")
     parser.add_argument("--file_a", type=Path, required=True, help="Path to first TSV file")
     parser.add_argument("--file_b", type=Path, required=True, help="Path to second TSV file")
-    parser.add_argument("--out_a", type=Path, default="comparison_a.tsv", help="Output TSV for file A results")
-    parser.add_argument("--out_b", type=Path, default="comparison_b.tsv", help="Output TSV for file B results")
+    parser.add_argument("--out_a", type=Path, default=None, help="Output TSV for file A results")
+    parser.add_argument("--out_b", type=Path, default=None, help="Output TSV for file B results")
+    parser.add_argument("--overlap", type=float, default=0.5, help="Reciprocal overlap fraction threshold (0-1), default=0.5")
 
     args = parser.parse_args()
 
-    main(args.file_a, args.file_b, args.out_a, args.out_b)
+    main(args.file_a, args.file_b, args.out_a, args.out_b, args.overlap)
