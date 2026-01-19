@@ -499,7 +499,7 @@ We compute the fraction of CNVs and their associated genes that are reciprocally
 
 \vspace{0.5cm}
 
-```{r overlap,echo=FALSE, warning=F, fig.width=9, fig.height=9}
+```{r overlap, echo=FALSE, warning=F, fig.width=9, fig.height=9}
 
 for (path_dataset in cnvDB_list){
   # Extract dataset name from path
@@ -571,7 +571,7 @@ for (pair in pairwise_sets) {
   
   # Capture output of Python script
   output <- system2(cmd, args, stdout = TRUE, stderr = TRUE)
-  
+ 
   # Look for lines containing percentages
   pct_lines <- grep("%", output, value = TRUE)
   

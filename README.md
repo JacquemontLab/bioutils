@@ -49,6 +49,12 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
 
 
 ### cnv_utils
+* **cnv_dataset_report.Rmd**
+  This Rscript generate a Rmarkdown pdf to check different QC of a CNV dataset.
+
+* **cnv_datasets_comparison_report.Rmd**
+  This Rscript generate a Rmarkdown pdf to compare CNV dataset that have been annotated.
+
 * **cnv_trio_inheritance.py**
   This pipeline analyzes the inheritance of CNVs (Copy Number Variants) in trio datasets.
 
