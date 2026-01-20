@@ -293,7 +293,7 @@ ggplot( length_cnvDB , aes(x = Length, fill = Type)) +   # map fill to Type
 
 \vspace{0.5cm}
 
-```{r cnv-length-dist, echo=FALSE, warning=F, fig.width=10, fig.height=7}
+```{r cnv-length-dist, echo=FALSE, warning=F, fig.width=10, fig.height=10}
 
 ggplot(length_df, aes(x = "", y = Count, fill = LengthBin)) +
   geom_bar(stat="identity", width=1) +
@@ -365,7 +365,7 @@ For each rCNV:
 
 \vspace{0.5cm}
 
-```{r rcnv-frequency-comparison,echo=FALSE, warning=F, fig.width=9, fig.height=5}
+```{r rcnv-frequency-comparison,echo=FALSE, warning=F, fig.width=9, fig.height=9}
 
 # ----------------------------------------
 # Pairwise rCNV frequency comparison
