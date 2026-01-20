@@ -193,7 +193,7 @@ def main(file_a: Path, file_b: Path, out_a: Path, out_b: Path, overlap_fraction:
 
     if out_b is not None:
         print(f"[INFO] Saving results to {out_b} ...")
-        df_b.to_csv(out_a, sep="\t", index=False)
+        df_b.to_csv(out_b, sep="\t", index=False)
     else:
         print(f"[INFO] df_b is empty, skipping save for {out_b}.")
     print("[INFO] Done.")
