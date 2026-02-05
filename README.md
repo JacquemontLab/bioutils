@@ -63,7 +63,12 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
 
 
 ## Program available
-
+* **nextflow-25.04.2-dist**
+  Nextflow version 25.04 executable.
+  
+* **nextflow-25.10.2-dist**
+  Nextflow version 25.10 executable.
+  
 * **duckdb**
   DuckDB executable.
   

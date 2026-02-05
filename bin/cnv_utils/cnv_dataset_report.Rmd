@@ -441,7 +441,7 @@ if (!file.exists(sampleDB_path)) {
         title = paste0("Mendelian precision (", scales::comma(number_trio), " trios)"),
         x = "CNV length category",
         y = "Mendelian precision"
-      ) + geom_text(aes(labels=round(Mendelian_Precision,2)) ,hjust=-0.3) +
+      ) + geom_text(aes(label=round(Mendelian_Precision,2)) ,hjust=-0.3) +
       scale_color_manual(values = c("steelblue", "tomato","orange"))  + ylim(0,1)+
       theme(
         text =  element_text(size = 16),
