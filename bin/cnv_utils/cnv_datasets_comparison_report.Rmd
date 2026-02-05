@@ -566,7 +566,7 @@ for (pair in pairwise_sets) {
   
   # Run Python script to compute overlaps
   cmd <- "python3"
-  args <- c(paste(path_bioutils_repo,"/bin/cnv_utils/cnv_concordance_checker.py",sep=""),
+  args <- c(paste(params$path_bioutils_repo,"/bin/cnv_utils/cnv_concordance_checker.py",sep=""),
             "--file_a", path_a,
             "--file_b", path_b,
             "--overlap", "0.25")
