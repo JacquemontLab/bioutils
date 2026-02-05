@@ -8,6 +8,7 @@ params:
   cnvDB_list: "/lustre09/project/6008022/LAB_WORKSPACE/DATABASE/CNV/SPARK/SPARK_WGS;/lustre09/project/6008022/LAB_WORKSPACE/DATABASE/CNV/SPARK/SPARK_Array_GRCh37;/lustre09/project/6008022/LAB_WORKSPACE/DATABASE/CNV/SPARK/Legacy_Array_GRCh38"
   path_CNVANNOTATION_repo: "/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/Git_pipeline/CNV-Annotation/"
   path_CNVCALLER_repo: "/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/Git_pipeline/CNV-Caller/"
+  path_bioutils_repo: "/lustre09/project/6008022/LAB_WORKSPACE/bioutils/"
 ---
 <!-- 
 Rscript -e 'rmarkdown::render("/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/bioutils/bin/cnv_utils/cnv_datasets_comparison_report.Rmd",
@@ -565,7 +566,7 @@ for (pair in pairwise_sets) {
   
   # Run Python script to compute overlaps
   cmd <- "python3"
-  args <- c("/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/bioutils/bin/cnv_utils/cnv_concordance_checker.py",
+  args <- c(paste(path_bioutils_repo,"bin/cnv_utils/cnv_concordance_checker.py",sep=""),
             "--file_a", path_a,
             "--file_b", path_b,
             "--overlap", "0.25")
