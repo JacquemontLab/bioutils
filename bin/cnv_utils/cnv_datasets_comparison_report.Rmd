@@ -265,7 +265,7 @@ This section explores the **size distribution of CNVs** across the dataset, stra
 
 \vspace{0.5cm}
 
-```{r cnv-length-hist, echo=FALSE, warning=F, fig.width=9, fig.height=5}
+```{r cnv-length-hist, echo=FALSE, warning=F, fig.width=10, fig.height=5}
 
 # Define the positions for annotations
 annot_positions <- c(1e3, 1e5, 1e7)  # bp
@@ -280,7 +280,7 @@ ggplot( length_cnvDB , aes(x = Length, fill = Type)) +   # map fill to Type
     strip.text = element_text(size = 12),
     legend.text = element_text(size = 12),
     legend.title = element_text(size = 14) 
-  ) + facet_wrap(~str_replace_all(dataset,"_"," ")) +
+  ) + facet_wrap(~str_replace_all(dataset,"_"," "), scales = "free_y") +
   annotation_logticks(sides = "bp") +
   scale_x_log10(labels = label_number(scale_cut = cut_si("bp")),
                 lim = c(500, 1e7),
