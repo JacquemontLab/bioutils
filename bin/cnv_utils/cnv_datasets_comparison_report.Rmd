@@ -280,7 +280,7 @@ ggplot( length_cnvDB , aes(x = Length, fill = Type)) +   # map fill to Type
     strip.text = element_text(size = 12),
     legend.text = element_text(size = 12),
     legend.title = element_text(size = 14) 
-  ) + facet_wrap(~str_replace_all(dataset,"_"," "), scales = "free_y") +
+  ) + facet_wrap(~str_replace_all(dataset,"_"," ")) +
   annotation_logticks(sides = "bp") +
   scale_x_log10(labels = label_number(scale_cut = cut_si("bp")),
                 lim = c(500, 1e7),
