@@ -76,7 +76,10 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
   King 2.3.2 executable.
 
 * **plink**
-  Plink 1.9 executable.
+  Plink 1.9 (31 Jul 2015) executable.
+
+* **plink2**
+  Plink 2.0 (28 Feb 2026) executable.
 
 * **timedev**
   Time executable that measures how long another command takes to run and reports resource usage.
