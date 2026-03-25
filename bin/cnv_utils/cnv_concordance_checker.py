@@ -13,6 +13,8 @@ This script takes two CNV call tables (TSV format) and compares them on two leve
 2. Gene-level match:
    - If both datasets contain a Gene_ID column, flags CNVs where
      SampleID, Type, and Gene_ID are all identical in the other dataset.
+   - The summary statistics specifically filter for 'protein_coding' 
+     biotypes to provide a high-confidence functional comparison.
 
 Outputs:
 --------
@@ -126,15 +128,16 @@ def print_summary(df_a: pd.DataFrame, df_b: pd.DataFrame, name_a: str, name_b: s
     print("\n=== SUMMARY ===")
     for name, df in [(name_a, df_a), (name_b, df_b)]:
         # Number of unique CNVs based on Chr, Start, End, Type
-        unique_cnvs = df.drop_duplicates(subset=["SampleID","Chr", "Start", "End", "Type"])
+        unique_cnvs = df.drop_duplicates(subset=["SampleID", "Chr", "Start", "End", "Type"])
         n_unique_cnvs = len(unique_cnvs)
 
-        cnv_ovlp = df.drop_duplicates(subset=["SampleID","Chr", "Start", "End", "Type"])["CNV_based_overlap"].sum()
+        cnv_ovlp = df.drop_duplicates(subset=["SampleID", "Chr", "Start", "End", "Type"])["CNV_based_overlap"].sum()
 
         print(f"{name}: {n_unique_cnvs} CNVs")
         print(f"  CNV-overlap: {cnv_ovlp} ({cnv_ovlp / n_unique_cnvs * 100:.2f}%)")
 
         if "Gene_ID" in df.columns:
+            df = df[df['BIOTYPE'] == 'protein_coding'].drop_duplicates(subset=["SampleID", "Type", "Gene_ID"])
             # Only consider rows where gene_based_overlap is not NA
             gene_mask = df["Gene_ID"].notna()
             gene_total = gene_mask.sum()  # number of rows with gene info
