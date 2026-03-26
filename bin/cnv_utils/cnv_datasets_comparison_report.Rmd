@@ -78,7 +78,8 @@ for (path_dataset in cnvDB_list){
   
   # Remove rows with Type == "MIX"
   cnvDB <- cnvDB %>%
-    filter(Type != "MIX")
+    filter(Type != "MIX") %>%
+    filter(ProblematicRegions_Overlap < 0.5)
   
   
   cnvDB = cnvDB[cnvDB$SampleID %in% sample_shared, ]
@@ -285,6 +286,7 @@ for (path_dataset in cnvDB_list){
 
 This section explores the **size distribution of CNVs** across the dataset, stratified by CNV type
 (e.g. deletion, duplication).
+Notes: We only study CNV with ProblematicRegions_Overlap < 0.5 to focus on high-confidence calls.
 
 ## A- Histogram of CNV lengths
 
@@ -589,6 +591,7 @@ for (path_dataset in cnvDB_list){
     FROM read_parquet('%s/cnvDB.parquet') c
     INNER JOIN sample_shared s
       ON c.SampleID = s.SampleID
+      AND ProblematicRegions_Overlap < 0.5
   ", path_dataset))
   
   # LEFT JOIN CNVs with gene annotations

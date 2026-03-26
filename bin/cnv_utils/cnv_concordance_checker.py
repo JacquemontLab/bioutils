@@ -143,7 +143,7 @@ def print_summary(df_a: pd.DataFrame, df_b: pd.DataFrame, name_a: str, name_b: s
             gene_total = gene_mask.sum()  # number of rows with gene info
 
             gene_ovlp = df["gene_based_overlap"].sum() if df["gene_based_overlap"].notna().any() else 0
-            print(f"  Gene-overlap: {gene_ovlp} ({gene_ovlp / gene_total * 100:.2f}%)")
+            print(f"Protein_coding Gene-overlap: {gene_ovlp} ({gene_ovlp / gene_total * 100:.2f}%)")
         
             
 
