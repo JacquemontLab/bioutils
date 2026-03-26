@@ -177,8 +177,6 @@ for (path_dataset in cnvDB_list){
   
   ## rCNV
   
-  ### rCNV
-  
   group_rCNV <- read.delim(paste(params$path_CNVANNOTATION_repo,"/resources/rCNV/geneset_per_rCNV.tsv",sep=""))
   rownames(group_rCNV) = group_rCNV$rCNV_ID
   
@@ -210,7 +208,7 @@ for (path_dataset in cnvDB_list){
   
   
   ### Mendelian Precision
-  
+
   if (length(unlist(find_sampleDB)) > 0)  {
     sampleDB_path = paste(names(unlist(find_sampleDB))[1],"/sampleDB.tsv",sep="")
     if (file.exists(sampleDB_path)){
@@ -595,12 +593,16 @@ if (nrow(MP_df) > 1 ){
 
 # 5- Fraction of CNVs reciprocaly found in the other dataset
 
-We compute the fraction of CNVs and their associated genes that are reciprocally observed across different CNV call datasets. For CNVs, a 25% reciprocal overlap threshold is applied, meaning that only CNVs overlapping by at least 25% in both datasets are considered. For genes, we do not consider the extent of overlap; we only check whether the gene is present or absent in the CNV calls.
+We compute the fraction of CNVs and their associated genes that are reciprocally observed across different CNV call datasets (using 10k samples).
+
+For CNVs, a 25% reciprocal overlap threshold is applied, meaning that only CNVs overlapping by at least 25% in both datasets are considered. For genes, we do not consider the extent of overlap; we only check whether the gene is present or absent in the CNV calls.
 To ensure functional relevance and reduce annotation noise, this analysis was restricted to protein-coding biotypes.
 
 \vspace{0.5cm}
 
 ```{r overlap, echo=FALSE, warning=F, fig.width=9, fig.height=9}
+
+sample_10k = sample_shared[1:10000]
 
 for (path_dataset in cnvDB_list){
   # Extract dataset name from path
@@ -610,9 +612,9 @@ for (path_dataset in cnvDB_list){
   con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
   
   # Push shared samples into DuckDB
-  sample_df <- data.frame(SampleID = sample_shared)
+  sample_df <- data.frame(SampleID = sample_10k)
   dbWriteTable(con, "sample_shared", sample_df, temporary = TRUE)
-  
+  print(length(sample_10k))
   # Filter CNVs to include only shared samples
   dbExecute(con, sprintf("
     CREATE TEMP TABLE cnv_DB AS
