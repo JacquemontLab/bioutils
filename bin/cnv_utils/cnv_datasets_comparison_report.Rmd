@@ -602,7 +602,7 @@ To ensure functional relevance and reduce annotation noise, this analysis was re
 
 ```{r overlap, echo=FALSE, warning=F, fig.width=9, fig.height=9}
 
-sample_10k = sample_shared[1:10000]
+sample_10k = sample_shared[1:min(10000, length(sample_shared))]
 
 for (path_dataset in cnvDB_list){
   # Extract dataset name from path
