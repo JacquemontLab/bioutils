@@ -220,12 +220,18 @@ for (path_dataset in cnvDB_list){
         
         # Connect to an in-memory DuckDB database
         con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+        
+        # Push shared samples into DuckDB
+        sample_df <- data.frame(SampleID = sample_shared)
+        dbWriteTable(con, "sample_shared", sample_df, temporary = TRUE)
           
         # Filter CNVs to include only shared samples
         dbExecute(con, sprintf("
           CREATE TEMP TABLE cnv_gene_DB AS
           SELECT c.*
           FROM read_parquet('%s/cnvDB.parquet') c
+          INNER JOIN sample_shared s
+            ON c.SampleID = s.SampleID
           WHERE ProblematicRegions_Overlap < 0.5
         ", path_dataset))
         
