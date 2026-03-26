@@ -218,6 +218,27 @@ for (path_dataset in cnvDB_list){
         
         cmd <- paste(params$path_CNVCALLER_repo,"/bin/make_report/cnv_trio_inheritance.py",sep="")
         
+        # Connect to an in-memory DuckDB database
+        con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+          
+        # Filter CNVs to include only shared samples
+        dbExecute(con, sprintf("
+          CREATE TEMP TABLE cnv_gene_DB AS
+          SELECT c.*
+          FROM read_parquet('%s/cnvDB.parquet') c
+          WHERE ProblematicRegions_Overlap < 0.5
+        ", path_dataset))
+        
+        # Save CNV-gene table for this dataset
+        dbExecute(con, sprintf("
+          COPY cnv_gene_DB
+          TO 'cnv_gene_DB_%s.parquet'
+          (FORMAT PARQUET)
+        ", dataset_name))
+        
+        # Disconnect from DuckDB
+        dbDisconnect(con, shutdown = TRUE)
+
         system2(
           "python3",
           args = c(
@@ -229,6 +250,8 @@ for (path_dataset in cnvDB_list){
           )
         )
         
+        unlink(paste("cnv_gene_DB_",dataset_name,".parquet",sep=""), force = TRUE)
+
         cnvDB_trio = read.delim("annotated_child_cnv.tsv")
         
         length(unique(cnvDB_trio$SampleID))
@@ -591,7 +614,7 @@ for (path_dataset in cnvDB_list){
     FROM read_parquet('%s/cnvDB.parquet') c
     INNER JOIN sample_shared s
       ON c.SampleID = s.SampleID
-      AND ProblematicRegions_Overlap < 0.5
+    WHERE ProblematicRegions_Overlap < 0.5
   ", path_dataset))
   
   # LEFT JOIN CNVs with gene annotations
