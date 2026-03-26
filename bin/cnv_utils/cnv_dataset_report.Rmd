@@ -31,6 +31,7 @@ library(viridis)    # Color palettes
 library(scales)     # Axis formatting
 library(rlang)
 library(readxl)
+library(ggh4x)
 
 ## ===============================
 ## Paths and dataset metadata
@@ -149,6 +150,67 @@ ggplot(bin_counts, aes(x = "", y = Count, fill = LengthBin)) +
   )
 ```
 
+## C- Counts per SampleID and CNV type
+
+```{r cnv-per-sample,echo=FALSE, warning=F, fig.width=5, fig.height=5}
+# 1. Compute counts: All CNVs per sample
+counts_all <- cnvDB %>%
+  group_by(SampleID, Type) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(Category = "All Sizes")
+
+# 2. Compute counts: Large CNVs (> 50kb) per sample
+counts_large <- cnvDB %>%
+  filter(Length > 50000) %>%
+  group_by(SampleID, Type) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(Category = "> 50 kb")
+
+# 3. Merge data for plotting
+boxplot_data <- rbind(counts_all, counts_large)
+
+# Ensure category order for faceting
+boxplot_data$Category <- factor(boxplot_data$Category, levels = c("All Sizes", "> 50 kb"))
+
+# 4. Generate 4 boxplots with specific zoom scales
+ggplot(boxplot_data, aes(x = Type, y = count, fill = Type)) +
+  geom_boxplot(outlier.size = 0.5, outlier.alpha = 0.2) +
+  
+  # Separate by size category
+  facet_wrap(~Category, scales = "free_y", ncol = 1) +
+  
+  # Configure specific zoom scales per facet
+  facetted_pos_scales(
+    y = list(
+      Category == "All Sizes" ~ scale_y_continuous(limits = c(0, 100), oob = scales::squish),
+      Category == "> 50 kb"  ~ scale_y_continuous(limits = c(0, 20), oob = scales::squish)
+    )
+  ) +
+  
+  theme_bw() +
+  scale_fill_manual(values = c("DEL" = "steelblue", "DUP" = "tomato")) +
+  
+  labs(
+    subtitle = "Specific zoom: 0-100 (Global) and 0-20 (> 50 kb)",
+    x = "Variant Type",
+    y = "Number of CNVs per sample"
+  ) +
+  theme(
+    text = element_text(size = 14),
+    strip.text = element_text(face = "bold", size = 12),
+    strip.background = element_rect(fill = "grey95"),
+    legend.position = "none"
+  )+
+  theme(
+    plot.subtitle = element_text(size = 10),
+    strip.text = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14) 
+  )
+```
+
+
+\newpage
 
 # 2- Analysis of CNV frequency as a function of cumulative LOEUF
 

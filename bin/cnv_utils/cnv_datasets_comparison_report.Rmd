@@ -30,6 +30,7 @@ library(viridis)    # Color palettes
 library(scales)     # Axis formatting
 library(rlang)
 library(readxl)
+library(ggh4x)
 
 cnvDB_list = str_split_1(params$cnvDB_list,";")
 
@@ -54,6 +55,7 @@ sample_number = n_distinct(sample_shared)
 
 ## Identify shared sample
 length_df = data.frame()
+cnv_per_sample_df = data.frame()
 loeuf_df = data.frame()
 rCNV_df = data.frame()
 MP_df = data.frame()
@@ -94,7 +96,7 @@ for (path_dataset in cnvDB_list){
   
   cnvDB$dataset = dataset_name
   
-  length_cnvDB = rbind(length_cnvDB , cnvDB[,c("Length","Type","dataset")] )
+  length_cnvDB = rbind(length_cnvDB , cnvDB[,c("Length","Type","SampleID","dataset")] )
   
   # Compute total per Type
   total_counts <- cnvDB %>%
@@ -110,7 +112,30 @@ for (path_dataset in cnvDB_list){
     group_by(LengthBin, FacetLabel) %>%
     summarise(Count = n(), .groups = "drop")
   
+  # Calculate CNVs per sample for each Type
+  # 1. Compute counts: All CNVs per sample
+  counts_all <- cnvDB %>%
+    group_by(SampleID, Type) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    mutate(Category = "All Sizes")
+
+  # 2. Compute counts: Large CNVs (> 50kb) per sample
+  counts_large <- cnvDB %>%
+    filter(Length > 50000) %>%
+    group_by(SampleID, Type) %>%
+    summarise(count = n(), .groups = "drop") %>%
+    mutate(Category = "> 50 kb")
+
+  # 3. Merge data for plotting
+  boxplot_data <- rbind(counts_all, counts_large)
+
+  # Ensure category order for faceting
+  boxplot_data$Category <- factor(boxplot_data$Category, levels = c("All Sizes", "> 50 kb"))
   
+  boxplot_data$dataset = dataset_name
+  
+  cnv_per_sample_df = rbind(cnv_per_sample_df, boxplot_data)
+
   # Fix colors using viridis
   length_bin_levels <- levels(factor(c("1-10kb", "10-50kb", "50-100kb", "100kb-1Mb", ">1Mb"),levels=c("1-10kb", "10-50kb", "50-100kb", "100kb-1Mb", ">1Mb")))
   fixed_colors <- viridis::viridis(length(length_bin_levels), option = "D")
@@ -119,7 +144,7 @@ for (path_dataset in cnvDB_list){
   bin_counts$dataset = dataset_name
   
   length_df = rbind(length_df, bin_counts)
-  fixed_colors_graph = append(fixed_colors_graph,fixed_colors)
+  fixed_colors_graph = append(fixed_colors_graph, fixed_colors)
   
   ### LOEUF
   
@@ -316,6 +341,48 @@ ggplot(length_df, aes(x = "", y = Count, fill = LengthBin)) +
 
 ```
 
+
+## C- Counts per SampleID and CNV type
+
+```{r cnv-per-sample,echo=FALSE, warning=F, fig.width=7, fig.height=7}
+
+ggplot(cnv_per_sample_df, aes(x = dataset , y = count, fill = Type)) +
+  geom_boxplot(outlier.size = 0.5, outlier.alpha = 0.2) +
+  
+  # Separate by size category
+  facet_wrap(~Category+Type, scales = "free_y", ncol = 2) +
+  
+  # Configure specific zoom scales per facet
+  facetted_pos_scales(
+    y = list(
+      Category == "All Sizes" ~ scale_y_continuous(limits = c(0, 100), oob = scales::squish),
+      Category == "> 50 kb"  ~ scale_y_continuous(limits = c(0, 20), oob = scales::squish)
+    )
+  ) +
+  
+  theme_bw() +
+  scale_fill_manual(values = c("DEL" = "steelblue", "DUP" = "tomato")) +
+  
+  labs(
+    subtitle = "Specific zoom: 0-100 (Global) and 0-20 (> 50 kb)",
+    x = "Variant Type",
+    y = "Number of CNVs per sample"
+  ) +
+  theme(
+    text = element_text(size = 14),
+    strip.text = element_text(face = "bold", size = 12),
+    strip.background = element_rect(fill = "grey95"),
+    legend.position = "none"
+  )+
+  theme(
+    plot.subtitle = element_text(size = 10),
+    strip.text = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle=30, vjust=0.5),
+    legend.title = element_text(size = 14) 
+  )
+```
+
 \newpage
 
 # 2- Analysis of CNV frequency as a function of cumulative LOEUF
@@ -334,7 +401,7 @@ Under purifying selection, we expect CNVs overlapping **LOEUF-intolerant genes**
 ## -------------------------------
 ## Plot
 ## -------------------------------
-ggplot(loeuf_df, aes(x = Avg_LOEUF, y = Frequency, col = Type, linetype=dataset,shape=dataset)) +
+ggplot(loeuf_df, aes(x = Avg_LOEUF, y = Frequency, col = Type, linetype=dataset, shape=dataset)) +
   geom_line(stat = "identity", position = "dodge") +
   labs(
     x = "Average cumulative LOEUF per CNV",
