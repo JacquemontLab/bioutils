@@ -594,7 +594,7 @@ if (nrow(MP_df) > 1 ){
 
 # 5- Fraction of CNVs reciprocaly found in the other dataset
 
-We compute the fraction of CNVs and their associated genes that are reciprocally observed across different CNV call datasets (using 10k samples).
+We compute the fraction of CNVs and their associated genes that are reciprocally observed across different CNV call datasets (using at most 10k samples).
 
 For CNVs, a 25% reciprocal overlap threshold is applied, meaning that only CNVs overlapping by at least 25% in both datasets are considered. For genes, we do not consider the extent of overlap; we only check whether the gene is present or absent in the CNV calls.
 To ensure functional relevance and reduce annotation noise, this analysis was restricted to protein-coding biotypes.
