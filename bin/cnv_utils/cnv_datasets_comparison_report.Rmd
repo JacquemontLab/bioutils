@@ -276,8 +276,8 @@ for (path_dataset in cnvDB_list){
         
         sampleDB = read.delim(sampleDB_path)
         sampleDB = sampleDB[sampleDB$SampleID %in% sample_shared &
-                              sampleDB$FatherID %in% sample_shared &
-                              sampleDB$MotherID %in% sample_shared
+                            sampleDB$FatherID %in% sample_shared &
+                            sampleDB$MotherID %in% sample_shared
                             ,]
         
         cnvDB_trio = cnvDB_trio[cnvDB_trio$SampleID %in% sampleDB$SampleID, ]
