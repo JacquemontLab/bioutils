@@ -615,7 +615,7 @@ for (path_dataset in cnvDB_list){
   # Push shared samples into DuckDB
   sample_df <- data.frame(SampleID = sample_10k)
   dbWriteTable(con, "sample_shared", sample_df, temporary = TRUE)
-  print(length(sample_10k))
+
   # Filter CNVs to include only shared samples
   dbExecute(con, sprintf("
     CREATE TEMP TABLE cnv_DB AS
