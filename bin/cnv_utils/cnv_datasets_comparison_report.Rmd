@@ -76,9 +76,9 @@ for (path_dataset in cnvDB_list){
   # Read the Parquet file
   cnvDB <- read_parquet(paste(path_dataset,"/cnvDB.parquet",sep=""))
   
-  # Remove rows with Type == "MIX"
+  # Keep rows with Type == "DEL" or "DUP" and ProblematicRegions_Overlap < 0.5
   cnvDB <- cnvDB %>%
-    filter(Type != "MIX") %>%
+    filter(Type == "DEL" | Type == "DUP") %>%
     filter(ProblematicRegions_Overlap < 0.5)
   
   
@@ -114,24 +114,25 @@ for (path_dataset in cnvDB_list){
     summarise(Count = n(), .groups = "drop")
   
   # Calculate CNVs per sample for each Type
-  # 1. Compute counts: All CNVs per sample
+  # 1. Compute counts: Small CNVs per sample
   counts_all <- cnvDB %>%
+    filter(Length < 50000) %>%
     group_by(SampleID, Type) %>%
     summarise(count = n(), .groups = "drop") %>%
-    mutate(Category = "All Sizes")
+    mutate(Category = "Small (< 50kb)")
 
   # 2. Compute counts: Large CNVs (> 50kb) per sample
   counts_large <- cnvDB %>%
-    filter(Length > 50000) %>%
+    filter(Length >= 50000) %>%
     group_by(SampleID, Type) %>%
     summarise(count = n(), .groups = "drop") %>%
-    mutate(Category = "> 50 kb")
+    mutate(Category = "Large (>= 50kb)")
 
   # 3. Merge data for plotting
   boxplot_data <- rbind(counts_all, counts_large)
 
   # Ensure category order for faceting
-  boxplot_data$Category <- factor(boxplot_data$Category, levels = c("All Sizes", "> 50 kb"))
+  boxplot_data$Category <- factor(boxplot_data$Category, levels = c("Small (< 50kb)", "Large (>= 50kb)"))
   
   boxplot_data$dataset = dataset_name
   
@@ -264,7 +265,7 @@ for (path_dataset in cnvDB_list){
         
         # Bin CNV lengths
         cnvDB_trio <- cnvDB_trio %>%
-          filter(Type != "MIX") %>%
+          filter(Type == "DEL" | Type == "DUP") %>%
           mutate(
             LengthBin = cut(
               Length, 
@@ -340,7 +341,7 @@ ggplot( length_cnvDB , aes(x = Length, fill = Type)) +   # map fill to Type
   scale_x_log10(labels = label_number(scale_cut = cut_si("bp")),
                 lim = c(500, 1e7),
                 breaks = annot_positions) +
-  scale_fill_manual(values = c("steelblue", "tomato","orange"))  # manually set two colors
+  scale_fill_manual(values = c("DUP" = "steelblue", "DEL" = "tomato"))  # manually set two colors
 
 ```
 
@@ -374,6 +375,8 @@ ggplot(length_df, aes(x = "", y = Count, fill = LengthBin)) +
 
 ## C- Counts per SampleID and CNV type
 
+\vspace{0.5cm}
+
 ```{r cnv-per-sample,echo=FALSE, warning=F, fig.width=7, fig.height=7}
 
 ggplot(cnv_per_sample_df, aes(x = dataset , y = count, fill = Type)) +
@@ -385,16 +388,16 @@ ggplot(cnv_per_sample_df, aes(x = dataset , y = count, fill = Type)) +
   # Configure specific zoom scales per facet
   facetted_pos_scales(
     y = list(
-      Category == "All Sizes" ~ scale_y_continuous(limits = c(0, 100), oob = scales::squish),
-      Category == "> 50 kb"  ~ scale_y_continuous(limits = c(0, 20), oob = scales::squish)
+      Category == "Small (< 50kb)" ~ scale_y_continuous(limits = c(0, 100), oob = scales::squish),
+      Category == "Large (>= 50kb)"  ~ scale_y_continuous(limits = c(0, 15), oob = scales::squish)
     )
   ) +
   
   theme_bw() +
-  scale_fill_manual(values = c("DEL" = "steelblue", "DUP" = "tomato")) +
+  scale_fill_manual(values = c("DUP" = "steelblue", "DEL" = "tomato")) +
   
   labs(
-    subtitle = "Specific zoom: 0-100 (Global) and 0-20 (> 50 kb)",
+    subtitle = "Specific zoom: 0-100 (Small CNVs) and 0-15 (Large CNVs)",
     x = "Variant Type",
     y = "Number of CNVs per sample"
   ) +
@@ -415,131 +418,7 @@ ggplot(cnv_per_sample_df, aes(x = dataset , y = count, fill = Type)) +
 
 \newpage
 
-# 2- Analysis of CNV frequency as a function of cumulative LOEUF
-
-This analysis examines the relationship between **CNV frequency** and the **cumulative LOEUF burden** of genes overlapped by each CNV.
-
-For each CNV, `sum_LOEUF` corresponds to the **sum of LOEUF values** of all *canonical transcripts* whose exons are overlapped by the CNV.
-CNV frequency is computed **relative to all CNVs of a given type**, including CNVs that do **not overlap any canonical transcript** (these are excluded from LOEUF binning but included in the denominator).
-
-Under purifying selection, we expect CNVs overlapping **LOEUF-intolerant genes** (low cumulative LOEUF) to be **rarer**, resulting in a decreasing CNV frequency with increasing cumulative LOEUF.
-
-\vspace{0.5cm}
-
-```{r cnv-loeuf-frequency, echo=FALSE, warning=F, fig.width=10, fig.height=5}
-
-## -------------------------------
-## Plot
-## -------------------------------
-ggplot(loeuf_df, aes(x = Avg_LOEUF, y = Frequency, col = Type, linetype=dataset, shape=dataset)) +
-  geom_line(stat = "identity", position = "dodge") +
-  labs(
-    x = "Average cumulative LOEUF per CNV",
-    y = "CNV frequency", 
-    title = "CNV frequency as a function of cumulative LOEUF") +
-  theme_bw() + geom_point() +
-  scale_color_manual(values = c("steelblue", "tomato","orange"))+ xlim(0,50)+
-  theme(
-    text =  element_text(size = 16),
-    plot.title = element_text(size = 14),
-    strip.text = element_text(size = 12),
-    legend.text = element_text(size = 12),
-    legend.title = element_text(size = 14) 
-  ) + facet_wrap(~Type)
-```
-
-
-\newpage
-
-# 3- rCNV frequency comparison between datasets
-
-This analysis compares **recurrent CNV (rCNV) frequencies** observed in the current datasets.
-
-For each rCNV:
-
-* Frequency is defined as the **percentage of samples carrying at least one event**
-* Comparisons are performed **pairwise** between this dataset and published references
-* Analyses are stratified by **rare (< 0.06%)** and **more frequent (> 0.06%)** rCNVs
-
-\vspace{0.5cm}
-
-```{r rcnv-frequency-comparison,echo=FALSE, warning=F, fig.width=9, fig.height=9}
-
-# ----------------------------------------
-# Pairwise rCNV frequency comparison
-# ----------------------------------------
-
-# Optional: remove missing or "-" frequencies and convert to numeric
-merged_bins <- rCNV_df %>%
-  filter(Frequency != "-" & !is.na(Frequency)) %>%
-  mutate(Frequency = as.numeric(Frequency))
-
-freq_wide <- merged_bins %>%
-  pivot_wider(names_from = Dataset, values_from = Frequency)
-
-freq_threshold <- 0.06
-plot_list <- list()
-
-# Dataset columns (exclude Group_ID)
-dataset_cols <- setdiff(colnames(freq_wide), "Group_ID")
-
-# All pairwise combinations
-pairwise_sets <- combn(dataset_cols, 2, simplify = FALSE)
-
-for (pair in pairwise_sets) {
-  
-  x_col <- pair[1]
-  y_col <- pair[2]
-  
-  for (label in c("Rare", "Common")) {
-    
-    plot_data <- freq_wide %>%
-      filter(!is.na(.data[[x_col]]) & !is.na(.data[[y_col]])) %>%
-      filter(
-        if (label == "Rare") .data[[x_col]] <= freq_threshold
-        else .data[[x_col]] > freq_threshold
-      )
-    
-    if (length(plot_data[[y_col]]) > 1){
-      lm_fit <- lm(plot_data[[y_col]] ~ plot_data[[x_col]])
-      r2 <- summary(lm_fit)$r.squared
-      
-      p <- ggplot(plot_data, aes(x = .data[[x_col]], y = .data[[y_col]])) +
-        geom_abline() +
-        geom_point(pch = 21, size = 3, fill = "darkgrey", alpha = 0.8) +
-        labs(
-          x = paste0(str_replace_all(x_col,"_"," "), " frequency (%)"),
-          y = paste0(str_replace_all(y_col,"_"," "), " frequency (%)"),
-          title = paste0(
-            label, " rCNVs (", 
-            ifelse(label == "Rare", "<=", ">"),
-            " 0.06%)\nR² = ", round(r2, 3)
-          )
-        ) +
-        theme_bw() +
-        theme(
-          axis.text = element_text(size = 12),
-          axis.title = element_text(size = 11),
-          plot.title = element_text(size = 11)
-        )
-      
-      plot_list[[paste(y_col, label)]] <- p
-    }
-  }
-}
-
-# ----------------------------------------
-# Combine all plots
-# ----------------------------------------
-wrap_plots(plot_list, ncol = 2)
-
-
-```
-
-
-\newpage
-
-# 4- Mendelian precision analysis
+# 2- Mendelian precision analysis
 
 This analysis evaluates the **Mendelian precision** of CNV calls using parent–child trios.
 For each CNV detected in the child, we assess whether a corresponding event is observed in at least one parent, given an overlap threshold of **25% reciprocal overlap**.
@@ -549,6 +428,17 @@ This metric provides a proxy for **call reliability**, with higher precision exp
 
 The analysis is performed only if a valid `sampleDB.tsv` file containing trio information
 (`SampleID`, `FatherID`, `MotherID`) is available.
+
+
+```{r mendelian-possibility,echo=FALSE, warning=F, fig.width=10, fig.height=5}
+
+if (!nrow(MP_df) > 2 ){
+  number_trio = 0
+  message("Mendelian precision not possible: missing or incomplete sampleDB.tsv.")
+}
+```
+
+## **Number of trios in the shared dataset:** `r scales::comma(number_trio)`
 
 \vspace{0.5cm}
 
@@ -568,11 +458,10 @@ if (nrow(MP_df) > 1 ){
     theme_bw() + geom_errorbar(aes(ymin = Mendelian_Precision - SE, ymax = Mendelian_Precision + SE), width = 0.1) +
     geom_point(size=2) +
     labs(
-      title = paste0("Mendelian precision (", scales::comma(number_trio), " trios)"),
       x = "CNV length category",
       y = "Mendelian precision"
     ) + geom_text(aes(label=round(Mendelian_Precision,2)) ,hjust=-0.3) +
-    scale_color_manual(values = c("steelblue", "tomato","orange"))  + ylim(0,1)+
+    scale_color_manual(values = c("DUP" = "steelblue", "DEL" = "tomato"))  + ylim(0,1)+
     theme(
       text =  element_text(size = 16),
       plot.title = element_text(size = 14),
@@ -581,18 +470,12 @@ if (nrow(MP_df) > 1 ){
       legend.title = element_text(size = 14) 
     ) + facet_wrap(~Type) 
   
-  
-  
-} else {
-  message("Mendelian precision analysis skipped: 'sampleDB.tsv' not found.")
-}
-
-
+} 
 ```
 
 \newpage
 
-# 5- Fraction of CNVs reciprocaly found in the other dataset
+# 3- Fraction of CNVs reciprocaly found in the other dataset
 
 We compute the fraction of CNVs and their associated genes that are reciprocally observed across different CNV call datasets (using at most 10k samples).
 
@@ -716,11 +599,11 @@ df_long <- overlap_db %>%
 
 # Plot heatmap showing fraction of CNVs/genes in db_1 found in db_2
 ggplot(df_long, aes(x = db_2, y = db_1, fill = value)) +  # db_1 in rows, db_2 in columns
-  geom_tile(color = "white") +
+  geom_tile(color = "black") +
   facet_wrap(~str_replace_all(metric,"_"," "),ncol=1) +
   scale_fill_gradient(low = "white", high = "darkred", limits = c(0, 100)) +  # percentage scale 0-100
   geom_text(aes(label = value), color = "black", size = 5) +
-  theme_minimal() + 
+  theme_minimal()+ 
   theme(
     text =  element_text(size = 16),
     plot.title = element_text(size = 14),
@@ -734,5 +617,129 @@ ggplot(df_long, aes(x = db_2, y = db_1, fill = value)) +  # db_1 in rows, db_2 i
     y = "Reference Database (Y)",
     fill = "Overlap %",
     title = "Fraction of CNVs/Genes in Y found in X (%)"
-  )
+  ) 
 ```
+
+\newpage
+
+# 4- rCNV frequency comparison between datasets
+
+This analysis compares **recurrent CNV (rCNV) frequencies** observed in the current datasets.
+
+For each rCNV:
+
+* Frequency is defined as the **percentage of samples carrying at least one event**
+* Comparisons are performed **pairwise** between this dataset and published references
+* Analyses are stratified by **rare (< 0.06%)** and **more frequent (> 0.06%)** rCNVs
+
+\vspace{0.5cm}
+
+```{r rcnv-frequency-comparison,echo=FALSE, warning=F, fig.width=9, fig.height=9}
+
+# ----------------------------------------
+# Pairwise rCNV frequency comparison
+# ----------------------------------------
+
+# Optional: remove missing or "-" frequencies and convert to numeric
+merged_bins <- rCNV_df %>%
+  filter(Frequency != "-" & !is.na(Frequency)) %>%
+  mutate(Frequency = as.numeric(Frequency))
+
+freq_wide <- merged_bins %>%
+  pivot_wider(names_from = Dataset, values_from = Frequency)
+
+freq_threshold <- 0.06
+plot_list <- list()
+
+# Dataset columns (exclude Group_ID)
+dataset_cols <- setdiff(colnames(freq_wide), "Group_ID")
+
+# All pairwise combinations
+pairwise_sets <- combn(dataset_cols, 2, simplify = FALSE)
+
+for (pair in pairwise_sets) {
+  
+  x_col <- pair[1]
+  y_col <- pair[2]
+  
+  for (label in c("Rare", "Common")) {
+    
+    plot_data <- freq_wide %>%
+      filter(!is.na(.data[[x_col]]) & !is.na(.data[[y_col]])) %>%
+      filter(
+        if (label == "Rare") .data[[x_col]] <= freq_threshold
+        else .data[[x_col]] > freq_threshold
+      )
+    
+    if (length(plot_data[[y_col]]) > 1){
+      lm_fit <- lm(plot_data[[y_col]] ~ plot_data[[x_col]])
+      r2 <- summary(lm_fit)$r.squared
+      
+      p <- ggplot(plot_data, aes(x = .data[[x_col]], y = .data[[y_col]])) +
+        geom_abline() +
+        geom_point(pch = 21, size = 3, fill = "darkgrey", alpha = 0.8) +
+        labs(
+          x = paste0(str_replace_all(x_col,"_"," "), " frequency (%)"),
+          y = paste0(str_replace_all(y_col,"_"," "), " frequency (%)"),
+          title = paste0(
+            label, " rCNVs (", 
+            ifelse(label == "Rare", "<=", ">"),
+            " 0.06%)\nR² = ", round(r2, 3)
+          )
+        ) +
+        theme_bw() +
+        theme(
+          axis.text = element_text(size = 12),
+          axis.title = element_text(size = 11),
+          plot.title = element_text(size = 11)
+        )
+      
+      plot_list[[paste(y_col, label)]] <- p
+    }
+  }
+}
+
+# ----------------------------------------
+# Combine all plots
+# ----------------------------------------
+wrap_plots(plot_list, ncol = 2)
+
+
+```
+
+
+\newpage
+
+# 5- Analysis of CNV frequency as a function of cumulative LOEUF
+
+This analysis examines the relationship between **CNV frequency** and the **cumulative LOEUF burden** of genes overlapped by each CNV.
+
+For each CNV, `sum_LOEUF` corresponds to the **sum of LOEUF values** of all *canonical transcripts* whose exons are overlapped by the CNV.
+CNV frequency is computed **relative to all CNVs of a given type**, including CNVs that do **not overlap any canonical transcript** (these are excluded from LOEUF binning but included in the denominator).
+
+Under purifying selection, we expect CNVs overlapping **LOEUF-intolerant genes** (low cumulative LOEUF) to be **rarer**, resulting in a decreasing CNV frequency with increasing cumulative LOEUF.
+
+\vspace{0.5cm}
+
+```{r cnv-loeuf-frequency, echo=FALSE, warning=F, fig.width=10, fig.height=5}
+
+## -------------------------------
+## Plot
+## -------------------------------
+ggplot(loeuf_df, aes(x = Avg_LOEUF, y = Frequency, col = Type, linetype=dataset, shape=dataset)) +
+  geom_line(stat = "identity", position = "dodge") +
+  labs(
+    x = "Average cumulative LOEUF per CNV",
+    y = "CNV frequency", 
+    title = "CNV frequency as a function of cumulative LOEUF") +
+  theme_bw() + geom_point() +
+  scale_color_manual(values = c("DUP" = "steelblue", "DEL" = "tomato"))+ xlim(0,50)+
+  theme(
+    text =  element_text(size = 16),
+    plot.title = element_text(size = 14),
+    strip.text = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14) 
+  ) + facet_wrap(~Type)
+```
+
