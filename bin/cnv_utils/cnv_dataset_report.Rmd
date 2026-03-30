@@ -53,17 +53,11 @@ cnvDB <- read_parquet(paste(path_dataset,"/cnvDB.parquet",sep=""))
 ## Basic dataset statistics
 sample_number <- n_distinct(cnvDB$SampleID)
 
-## Remove ambiguous CNVs
-cnvDB <- cnvDB %>%
-  filter(Type == "DEL" | Type == "DUP") %>%
-  filter(ProblematicRegions_Overlap < 0.5)
-
-
 ```
 
 # **Dataset:** `r str_replace_all(dataset_name,"_"," ")`  
 ### **Date:** `r format(Sys.Date(), "%d/%m/%Y")`
-### **Number of samples in the dataset:** `r scales::comma(sample_number)`
+### **Number of samples with a CNV in the dataset:** `r scales::comma(sample_number)`
 
 \vspace{0.5cm}
 
@@ -78,6 +72,11 @@ Notes: We only study CNV with ProblematicRegions_Overlap < 0.5 to focus on high-
 
 \vspace{0.5cm}
 ```{r cnv-length-dist, echo=FALSE, warning=F, fig.width=7, fig.height=3}
+
+## Remove ambiguous CNVs
+cnvDB <- cnvDB %>%
+  filter(Type == "DEL" | Type == "DUP") %>%
+  filter(ProblematicRegions_Overlap < 0.5)
 
 # Define the positions for annotations
 annot_positions <- c(1e3, 1e4, 1e5, 1e6, 1e7, 1e8)  # bp
