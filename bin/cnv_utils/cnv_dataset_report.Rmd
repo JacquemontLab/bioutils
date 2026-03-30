@@ -57,7 +57,7 @@ sample_number <- n_distinct(cnvDB$SampleID)
 
 # **Dataset:** `r str_replace_all(dataset_name,"_"," ")`  
 ### **Date:** `r format(Sys.Date(), "%d/%m/%Y")`
-### **Number of samples with a CNV in the dataset:** `r scales::comma(sample_number)`
+### **Number of samples carrying CNVs in the dataset:** `r scales::comma(sample_number)`
 
 \vspace{0.5cm}
 
