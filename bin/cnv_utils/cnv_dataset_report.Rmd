@@ -468,7 +468,9 @@ if (mendelian_precision) {
         strip.background = element_rect(fill = "grey90"),
         strip.text = element_text(face = "bold",size = 12)
       ) +
-      theme(
+      theme(legend.position = "bottom",
+        legend.box = "vertical",
+        legend.direction = "horizontal",
         text =  element_text(size = 17),
         plot.title = element_text(size = 17),
         axis.text.x = element_text(size = 12, angle=30, vjust=0.7),
