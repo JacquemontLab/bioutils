@@ -586,11 +586,16 @@ for (label in c("Rare", "Common")) {
         if (label == "Rare") .data[[x_col]] <= freq_threshold
         else .data[[x_col]] > freq_threshold
       )
-    
-    
-    lm_fit <- lm(plot_data[[y_col]] ~ plot_data[[x_col]])
-    r2 <- summary(lm_fit)$r.squared
-    
+      
+    # Check if we actually have data points to plot
+    if (nrow(plot_data) > 1) {
+      lm_fit <- lm(plot_data[[y_col]] ~ plot_data[[x_col]])
+      r2 <- summary(lm_fit)$r.squared
+      r2_label <- round(r2, 3)
+    } else {
+      # If no data, we set R2 to NA or 0 to avoid crashing
+      r2_label <- "N/A"
+    }
     p <- ggplot(plot_data, aes(x = .data[[x_col]], y = .data[[y_col]])) +
       geom_abline() +
       geom_point(pch = 21, size = 3, fill = "darkgrey", alpha = 0.8) +
@@ -600,7 +605,7 @@ for (label in c("Rare", "Common")) {
         title = paste0(
           label, " rCNVs (", 
           ifelse(label == "Rare", "<=", ">"),
-          " 0.06%)\nR² = ", round(r2, 3)
+          " 0.06%)\nR² = ", r2_label
         )
       ) +
       theme_bw() +
