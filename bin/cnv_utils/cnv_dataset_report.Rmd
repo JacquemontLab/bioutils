@@ -255,62 +255,74 @@ if (!file.exists(sampleDB_path)) {
       paste(missing_cols, collapse = ", ")
     )
   } else {
+        # A 'trio' exists if a sample has both a Father and a Mother listed
+        # We check that the IDs are not NA, not empty, and not "0"
+        trios <- sampleDB[
+          !is.na(sampleDB$FatherID) & sampleDB$FatherID != "" & sampleDB$FatherID != "0" &
+          !is.na(sampleDB$MotherID) & sampleDB$MotherID != "" & sampleDB$MotherID != "0", 
+        ]
     
-    ## -------------------------------
-    ## Run trio inheritance annotation
-    ## -------------------------------
-    cmd <- paste(path_CNVCALLER_repo,"/bin/make_report/cnv_trio_inheritance.py",sep="")
+        at_least_one_trio <- nrow(trios) > 0
     
-    dataset_name = str_split_1(path_dataset,"/")[length(str_split_1(path_dataset,"/"))]
-    
-    # Connect to an in-memory DuckDB database
-    con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-      
-    # Filter CNVs to include only shared samples
-    dbExecute(con, sprintf("
-      CREATE TEMP TABLE cnv_gene_DB AS
-      SELECT c.*
-      FROM read_parquet('%s/cnvDB.parquet') c
-      WHERE ProblematicRegions_Overlap < 0.5
-    ", path_dataset))
-    
-    # Save CNV-gene table for this dataset
-    dbExecute(con, sprintf("
-      COPY cnv_gene_DB
-      TO 'cnv_gene_DB_%s.parquet'
-      (FORMAT PARQUET)
-    ", dataset_name))
-    
-    # Disconnect from DuckDB
-    dbDisconnect(con, shutdown = TRUE)
+        if (!at_least_one_trio) {
+          message("Mendelian precision analysis skipped: No complete trios found in sampleDB.")
+        } else {
+              ## -------------------------------
+              ## Run trio inheritance annotation
+              ## -------------------------------
+              cmd <- paste(path_CNVCALLER_repo,"/bin/make_report/cnv_trio_inheritance.py",sep="")
+              
+              dataset_name = str_split_1(path_dataset,"/")[length(str_split_1(path_dataset,"/"))]
+              
+              # Connect to an in-memory DuckDB database
+              con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+                
+              # Filter CNVs to include only shared samples
+              dbExecute(con, sprintf("
+                CREATE TEMP TABLE cnv_gene_DB AS
+                SELECT c.*
+                FROM read_parquet('%s/cnvDB.parquet') c
+                WHERE ProblematicRegions_Overlap < 0.5
+              ", path_dataset))
+              
+              # Save CNV-gene table for this dataset
+              dbExecute(con, sprintf("
+                COPY cnv_gene_DB
+                TO 'cnv_gene_DB_%s.parquet'
+                (FORMAT PARQUET)
+              ", dataset_name))
+              
+              # Disconnect from DuckDB
+              dbDisconnect(con, shutdown = TRUE)
 
-    system2(
-      "python3",
-      args = c(
-        cmd,
-        "-c", paste("cnv_gene_DB_", dataset_name,".parquet",sep=""),
-        "-p", paste(path_dataset,"/sampleDB.tsv",sep=""),
-        "-t", "Type",
-        "-f", "0.25"
-      )
-    )
-    
-    unlink(paste("cnv_gene_DB_", dataset_name,".parquet",sep=""), force = TRUE)
+              system2(
+                "python3",
+                args = c(
+                  cmd,
+                  "-c", paste("cnv_gene_DB_", dataset_name,".parquet",sep=""),
+                  "-p", paste(path_dataset,"/sampleDB.tsv",sep=""),
+                  "-t", "Type",
+                  "-f", "0.25"
+                )
+              )
+              
+              unlink(paste("cnv_gene_DB_", dataset_name,".parquet",sep=""), force = TRUE)
 
-    ## -------------------------------
-    ## Load annotated CNVs
-    ## -------------------------------
-    cnvDB_trio <- read.delim("annotated_child_cnv.tsv") %>%
-      filter(Type == "DEL" | Type == "DUP")
-    
-    number_trio <- n_distinct(cnvDB_trio$SampleID) 
+              ## -------------------------------
+              ## Load annotated CNVs
+              ## -------------------------------
+              cnvDB_trio <- read.delim("annotated_child_cnv.tsv") %>%
+                filter(Type == "DEL" | Type == "DUP")
+              
+              number_trio <- n_distinct(cnvDB_trio$SampleID) 
 
-    if (number_trio == 0) {
-      message("Mendelian precision analysis skipped: no child CNVs with trio information found.")
-    } else {
-    mendelian_precision <- TRUE
+              if (number_trio == 0) {
+                message("Mendelian precision analysis skipped: no child CNVs with trio information found.")
+              } else {
+              mendelian_precision <- TRUE
+      }
+    }
   }
-}
 }
 ```
 
