@@ -34,27 +34,123 @@ INPUT_MD="$1"
 OUTPUT_PDF="$2"
 TEMP_HTML="temp.html"
 TEMP_CSS="temp.css"
+TEMP_CSS_empty="temp_empty.css"
+
+touch $TEMP_CSS_empty
 
 # Create a temporary CSS file
 cat <<EOT > "$TEMP_CSS"
-body {
-    font-size: 12pt;
-    margin: 10mm;
+@page {
+    size: A4;
+    margin: 5mm 10mm 2mm 10mm;
+}
+.page-break {
+    break-before: page;
+}
+
+html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #24292e;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    text-align: justify;
+    line-height: 1.5;
+}
+
+/* ===== HEADINGS (GitHub-like) ===== */
+h1 {
+    font-size: 22px;
+    border-bottom: 1px solid #eaecef;
+    padding-bottom: 6px;
+    margin-top: 18px;
+}
+
+h2 {
+    font-size: 18px;
+    border-bottom: 1px solid #eaecef;
+    padding-bottom: 4px;
+    margin-top: 14px;
+}
+
+h3 {
+    font-size: 16px;
+    margin-top: 12px;
+}
+
+/* ===== LINKS ===== */
+a {
+    color: #0366d6;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow-wrap: normal;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* ===== PARAGRAPHS ===== */
+p {
+    margin: 6px 0;
+    text-align: justify;
+}
+
+/* ===== CODE ===== */
+code {
+    background: #f6f8fa;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+/* ===== TABLES (GitHub style) ===== */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin: 10px 0;
+}
+
+th {
+    background: #f6f8fa;
+    font-weight: 600;
+    border: 1px solid #d0d7de;
+    padding: 6px;
+}
+
+td {
+    border: 1px solid #d0d7de;
+    padding: 6px;
+    vertical-align: top;
+}
+
+/* ===== IMAGES ===== */
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 10px 0;
+}
+
+/* ===== BLOCKS ===== */
+div {
+    max-width: 100%;
 }
 EOT
 
 # Convert Markdown to HTML
 pandoc "$INPUT_MD" -o "$TEMP_HTML" -s \
     --from markdown \
-    --to html5 \
-    -V charset=utf-8 \
-    -c "$TEMP_CSS"
+    -c "$TEMP_CSS_empty"
 
 # Convert HTML to PDF
-wkhtmltopdf --enable-local-file-access "$TEMP_HTML" "$OUTPUT_PDF"
+weasyprint "$TEMP_HTML" "$OUTPUT_PDF" --stylesheet $TEMP_CSS
 
 # Cleanup
-rm -f "$TEMP_HTML" "$TEMP_CSS"
+rm -f "$TEMP_HTML" "$TEMP_CSS" "$TEMP_CSS_empty"
 
 echo "PDF created: $OUTPUT_PDF"
 

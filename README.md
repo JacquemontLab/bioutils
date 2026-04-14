@@ -25,7 +25,7 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
   Merges multiple files from a directory into a single output file by processing them in parallel chunks, preserving only the header from the first file.
 
 * **markdown\_to\_pdf**
-  Converts a Markdown file to PDF by rendering it to HTML with grip and converting the HTML to PDF using wkhtmltopdf.
+  Converts a Markdown file to PDF by rendering it to HTML with grip and converting the HTML to PDF using weasyprint.
 
 * **launch\_salloc**
   Submits an interactive cluster job request with specified duration, CPUs, and memory per CPU using `salloc`.
