@@ -70,7 +70,7 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
   Nextflow version 25.10 executable.
   
 * **duckdb**
-  DuckDB executable.
+  DuckDB version v1.4.1 executable.
   
 * **king**
   King 2.3.2 executable.
