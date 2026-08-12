@@ -35,7 +35,9 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
 
 * **run_with_time**
   Wraps any command to monitor and display execution time, CPU usage, and peak memory consumption using /usr/bin/time.
-  
+
+* **check_genomeref**
+  Will identify the genome version of a parquet|bim|bed|tsv given a directory containing .fai of genome reference, by comparing max position on each Chr.
 
 ### plink_utils
 * **filter_merge_missing.sh**
