@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+#
+# check_genomeref.sh — check whether interval/position coordinates in an input
+# file exceed the contig lengths of one or more genome references.
+#
+# For each reference (.fai discovered recursively under a directory) and each
+# chromosome in the input, reports the input's max coordinate, the contig
+# length, and whether the coordinate runs past the contig end. Useful for
+# identifying which genome build a coordinate set belongs to.
+#
+# Inputs supported (auto-detected by extension):
+#   *.parquet          cnvDB-style: columns Chr, Start, End (1-based inclusive)
+#   *.bim              PLINK: <chr snp cm pos a1 a2>, no header (point positions)
+#   *.bed / *.bed.gz   BED: <chr start end ...>, 0-based half-open
+#   *.tsv / *.csv      Delimited WITH header; Chr/Start/End columns (by name)
+#
+# Contig matching is naming-agnostic: 'chr1'/'1', and PLINK's 23/24/25/26 for
+# X/Y/XY(PAR)/MT are all normalised to a canonical bare form (1..22,X,Y,MT)
+# for the join, while the input's original contig name is shown in the output.
+#
+# Requires: duckdb (>= 0.9). No other dependencies.
+#
+# Usage:
+#   check_genomeref.sh -r <reference_dir> -i <input_file> [-t <parquet|bim|bed|tsv>]
+#   On CCDB: check_genomeref.sh -r /home/flben/links/projects/rrg-jacquese/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv>]
+#
+# Options:
+#   -r DIR    Directory searched recursively for *.fai index files (required)
+#   -i FILE   Input coordinate file (required)
+#   -t TYPE   Force input type (parquet|bim|bed|tsv); default: infer from extension
+#   -h        Show this help
+#
+# Exit codes: 0 ok · 1 usage/IO error · 2 missing dependency
+set -euo pipefail
+
+die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
+usage() { sed -n '2,/^set -euo/{/^set -euo/!p}' "$0" | sed 's/^# \{0,1\}//'; }
+
+# ---- parse args -------------------------------------------------------------
+REF_DIR="" INPUT="" ITYPE=""
+while getopts ":r:i:t:h" opt; do
+  case "$opt" in
+    r) REF_DIR=$OPTARG ;;
+    i) INPUT=$OPTARG ;;
+    t) ITYPE=$OPTARG ;;
+    h) usage; exit 0 ;;
+    :) die "option -$OPTARG requires an argument" ;;
+    \?) die "unknown option -$OPTARG (use -h for help)" ;;
+  esac
+done
+
+command -v duckdb >/dev/null 2>&1 || { echo "Error: duckdb not found in PATH" >&2; exit 2; }
+[[ -n $REF_DIR ]] || die "reference directory required (-r); use -h for help"
+[[ -n $INPUT   ]] || die "input file required (-i); use -h for help"
+[[ -d $REF_DIR ]] || die "reference directory not found: $REF_DIR"
+[[ -f $INPUT   ]] || die "input file not found: $INPUT"
+
+# ---- infer input type -------------------------------------------------------
+if [[ -z $ITYPE ]]; then
+  case "$INPUT" in
+    *.parquet)              ITYPE=parquet ;;
+    *.bim)                  ITYPE=bim ;;
+    *.bed|*.bed.gz)         ITYPE=bed ;;
+    *.tsv|*.tsv.gz|*.csv|*.csv.gz|*.txt) ITYPE=tsv ;;
+    *) die "cannot infer type from '$INPUT'; pass -t parquet|bim|bed|tsv" ;;
+  esac
+fi
+case "$ITYPE" in parquet|bim|bed|tsv) ;; *) die "invalid -t '$ITYPE' (parquet|bim|bed|tsv)";; esac
+
+# ---- discover .fai files ----------------------------------------------------
+mapfile -d '' FAIS < <(find "$REF_DIR" -type f -name '*.fai' -print0 | sort -z)
+[[ ${#FAIS[@]} -gt 0 ]] || die "no .fai files found under $REF_DIR"
+
+# Reference label = parent-dir/filename, e.g. GRCh38/....fna.fai -> "GRCh38".
+# Falls back to the .fai basename if the parent isn't informative.
+ref_label() {
+  local f=$1 parent
+  parent=$(basename "$(dirname "$f")")
+  if [[ $parent == "." || $parent == "/" || -z $parent ]]; then
+    basename "$f" .fai
+  else
+    printf '%s' "$parent"
+  fi
+}
+
+# ---- SQL fragments ----------------------------------------------------------
+# Canonical contig normaliser applied to BOTH sides of the join.
+# Strips 'chr' (any case), maps mitochondrial aliases to MT, and maps PLINK's
+# numeric sex/organelle codes (23=X 24=Y 25=XY-PAR 26=MT) to letters.
+# Emitted as a SQL expression over a column reference passed in.
+norm_expr() { # $1 = column expression
+  cat <<SQL
+upper(
+  CASE
+    WHEN regexp_replace(CAST($1 AS VARCHAR), '^chr', '', 'i') IN ('M','MT') THEN 'MT'
+    WHEN regexp_replace(CAST($1 AS VARCHAR), '^chr', '', 'i') = '23' THEN 'X'
+    WHEN regexp_replace(CAST($1 AS VARCHAR), '^chr', '', 'i') = '24' THEN 'Y'
+    WHEN regexp_replace(CAST($1 AS VARCHAR), '^chr', '', 'i') = '25' THEN 'X'
+    WHEN regexp_replace(CAST($1 AS VARCHAR), '^chr', '', 'i') = '26' THEN 'MT'
+    ELSE regexp_replace(CAST($1 AS VARCHAR), '^chr', '', 'i')
+  END
+)
+SQL
+}
+
+# Input CTE: produce (chr_display, chr_key, max_end) per chromosome.
+# max_end is the largest coordinate to test against contig length:
+#   parquet -> MAX("End")   (1-based inclusive interval end)
+#   bed     -> MAX(end col) (0-based half-open end == count of bases)
+#   bim     -> MAX(pos)     (point position)
+input_cte() {
+  local nk; nk=$(norm_expr 'raw_chr')
+  case "$ITYPE" in
+    parquet)
+      cat <<SQL
+raw AS (
+  SELECT CAST(Chr AS VARCHAR) AS raw_chr, CAST("End" AS BIGINT) AS coord
+  FROM read_parquet('$INPUT')
+)
+SQL
+      ;;
+    bim)
+      # PLINK .bim: col0=chr col3=bp position, whitespace/tab separated, no header
+      cat <<SQL
+raw AS (
+  SELECT CAST(column0 AS VARCHAR) AS raw_chr, CAST(column3 AS BIGINT) AS coord
+  FROM read_csv('$INPUT', delim='\t', header=false, ignore_errors=true,
+                columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR',
+                         'column3':'BIGINT','column4':'VARCHAR','column5':'VARCHAR'})
+)
+SQL
+      ;;
+    tsv)
+      # Delimited text WITH a header. Coordinate columns are matched by name
+      # (case-insensitive): chromosome = Chr/chrom/chromosome/#chrom;
+      # end = End/stop/pos/position/bp. Delimiter auto-detected by DuckDB.
+      # Override the detected names with env vars CHR_COL / END_COL if needed.
+      local chr_col="${CHR_COL:-}" end_col="${END_COL:-}"
+      # Discover header names, one per line (no delimiter to escape).
+      local hdr
+      hdr=$(duckdb -noheader -list <<HSQL 2>/dev/null || true
+SELECT column_name FROM (DESCRIBE SELECT * FROM read_csv('$INPUT', header=true, sample_size=1));
+HSQL
+)
+      [[ -n $hdr ]] || die "TSV: could not read header of $INPUT (is it delimited with a header row?)"
+      if [[ -z $chr_col ]]; then
+        chr_col=$(printf '%s\n' "$hdr" \
+          | awk 'tolower($0)~/^#?(chr|chrom|chromosome|chr_name)$/{print; exit}')
+      fi
+      if [[ -z $end_col ]]; then
+        end_col=$(printf '%s\n' "$hdr" \
+          | awk 'tolower($0)~/^(end|stop|pos|position|bp|bp_position)$/{print; exit}')
+      fi
+      [[ -n $chr_col ]] || die "TSV: no chromosome column found in header [$(printf '%s' "$hdr" | paste -sd, -)]; set CHR_COL=<name>"
+      [[ -n $end_col ]] || die "TSV: no end/pos column found in header [$(printf '%s' "$hdr" | paste -sd, -)]; set END_COL=<name>"
+      cat <<SQL
+raw AS (
+  SELECT CAST("$chr_col" AS VARCHAR) AS raw_chr, CAST("$end_col" AS BIGINT) AS coord
+  FROM read_csv('$INPUT', header=true, ignore_errors=true)
+)
+SQL
+      ;;
+    bed)
+      # BED: col0=chr col1=start col2=end; skip comment/track/browser lines.
+      cat <<SQL
+raw AS (
+  SELECT CAST(column0 AS VARCHAR) AS raw_chr, CAST(column2 AS BIGINT) AS coord
+  FROM read_csv('$INPUT', delim='\t', header=false, ignore_errors=true,
+                columns={'column0':'VARCHAR','column1':'BIGINT','column2':'BIGINT'})
+  WHERE column0 NOT LIKE '#%' AND column0 <> 'track' AND column0 <> 'browser'
+        AND column2 IS NOT NULL
+)
+SQL
+      ;;
+  esac
+  echo ","
+  cat <<SQL
+inp AS (
+  SELECT
+    any_value(raw_chr) AS chr_display,
+    $nk                AS chr_key,
+    MAX(coord)         AS max_end
+  FROM raw
+  GROUP BY $nk
+)
+SQL
+}
+
+# ---- color setup ------------------------------------------------------------
+# Honour NO_COLOR and disable when stdout isn't a terminal.
+if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
+  C_RESET=$'\e[0m'; C_BOLD=$'\e[1m'; C_DIM=$'\e[2m'
+  C_GREEN=$'\e[32m'; C_RED=$'\e[31m'; C_YELLOW=$'\e[33m'; C_CYAN=$'\e[36m'
+else
+  C_RESET=""; C_BOLD=""; C_DIM=""; C_GREEN=""; C_RED=""; C_YELLOW=""; C_CYAN=""
+fi
+
+# ---- build and run one query per reference ---------------------------------
+# Natural chromosome ordering: 1..22 numeric, then X,Y,MT, then anything else.
+ORDER_SQL="CASE WHEN chr_key ~ '^[0-9]+\$' THEN CAST(chr_key AS INTEGER)
+                WHEN chr_key='X' THEN 100 WHEN chr_key='Y' THEN 101
+                WHEN chr_key='MT' THEN 102 ELSE 200 END, chr_key"
+
+echo "${C_BOLD}Input :${C_RESET} $INPUT  (type: $ITYPE)"
+echo "Coordinate tested: max End/pos per chromosome vs contig length"
+echo "${C_GREEN}exceeds=false${C_RESET} everywhere → data fits that build ; ${C_RED}exceeds=true${C_RESET} → data runs past a contig (wrong build)"
+echo
+
+nk_fai=$(norm_expr 'fai_contig')
+
+# Accumulators for the final summary (parallel arrays indexed with the loop).
+declare -a SUM_LABEL SUM_PATH SUM_EXC SUM_MISS SUM_TOTAL
+
+# Emits the per-reference detail table.
+run_table() { # $1 = fai path
+  local fai=$1
+  duckdb <<SQL
+WITH
+$(input_cte),
+fai AS (
+  SELECT CAST(column0 AS VARCHAR) AS fai_contig, CAST(column1 AS BIGINT) AS len,
+         $nk_fai AS chr_key
+  FROM read_csv('$fai', delim='\t', header=false,
+                columns={'column0':'VARCHAR','column1':'BIGINT','column2':'BIGINT',
+                         'column3':'BIGINT','column4':'BIGINT'})
+)
+SELECT
+  inp.chr_display                              AS chr,
+  inp.max_end                                  AS max_end,
+  fai.len                                      AS contig_len,
+  (fai.len IS NULL)                            AS not_in_ref,
+  CASE WHEN fai.len IS NULL THEN NULL
+       ELSE inp.max_end > fai.len END          AS exceeds
+FROM inp
+LEFT JOIN fai USING (chr_key)
+ORDER BY $ORDER_SQL;
+SQL
+}
+
+# Emits three integers: n_exceeding  n_not_in_ref  n_total  (tab-separated).
+run_counts() { # $1 = fai path
+  duckdb -noheader -list <<SQL
+WITH
+$(input_cte),
+fai AS (
+  SELECT CAST(column0 AS VARCHAR) AS fai_contig, CAST(column1 AS BIGINT) AS len,
+         $(norm_expr 'fai_contig') AS chr_key
+  FROM read_csv('$1', delim='\t', header=false,
+                columns={'column0':'VARCHAR','column1':'BIGINT','column2':'BIGINT',
+                         'column3':'BIGINT','column4':'BIGINT'})
+),
+j AS (
+  SELECT fai.len AS len, inp.max_end AS max_end
+  FROM inp LEFT JOIN fai USING (chr_key)
+)
+SELECT
+  COALESCE(SUM(CASE WHEN len IS NOT NULL AND max_end > len THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN len IS NULL THEN 1 ELSE 0 END),0),
+  COUNT(*)
+FROM j;
+SQL
+}
+
+i=0
+for fai in "${FAIS[@]}"; do
+  label=$(ref_label "$fai")
+
+  # counts drive the verdict color of the header and the summary line
+  IFS='|' read -r n_exc n_miss n_tot < <(run_counts "$fai")
+  n_exc=${n_exc:-0}; n_miss=${n_miss:-0}; n_tot=${n_tot:-0}
+
+  if [[ $n_exc -eq 0 && $n_miss -eq 0 ]]; then
+    hdr_color=$C_GREEN
+  elif [[ $n_exc -eq 0 ]]; then
+    hdr_color=$C_YELLOW   # fits, but some contigs weren't found
+  else
+    hdr_color=$C_RED      # something exceeds → not this build
+  fi
+
+  echo "${hdr_color}${C_BOLD}=== Reference: $label ===${C_RESET}"
+  echo "${C_DIM}$fai${C_RESET}"
+  run_table "$fai"
+  echo
+
+  SUM_LABEL[i]=$label; SUM_PATH[i]=$fai
+  SUM_EXC[i]=$n_exc; SUM_MISS[i]=$n_miss; SUM_TOTAL[i]=$n_tot
+  ((i++)) || true
+done
+
+# ---- final summary ----------------------------------------------------------
+echo "${C_BOLD}────────────────────────── SUMMARY ──────────────────────────${C_RESET}"
+best_idx=-1
+for ((k=0; k<i; k++)); do
+  exc=${SUM_EXC[k]} miss=${SUM_MISS[k]} tot=${SUM_TOTAL[k]}
+  if [[ $exc -eq 0 && $miss -eq 0 ]]; then
+    tag="${C_GREEN}✓ MATCH${C_RESET}     "
+    [[ $best_idx -lt 0 ]] && best_idx=$k
+  elif [[ $exc -eq 0 ]]; then
+    tag="${C_YELLOW}~ partial${C_RESET}   "
+    [[ $best_idx -lt 0 ]] && best_idx=$k
+  else
+    tag="${C_RED}✗ excluded${C_RESET}  "
+  fi
+  # short reference name for readability
+  printf '  %b  %-28s  %s\n' "$tag" "${SUM_LABEL[k]} [$(basename "${SUM_PATH[k]}")]" \
+    "$(printf '%s exceeding, %s not-in-ref, of %s contigs' \
+        "$([[ $exc -gt 0 ]] && printf '%b%s%b' "$C_RED" "$exc" "$C_RESET" || printf '%s' "$exc")" \
+        "$([[ $miss -gt 0 ]] && printf '%b%s%b' "$C_YELLOW" "$miss" "$C_RESET" || printf '%s' "$miss")" \
+        "$tot")"
+done
+echo
+
+n_match=0
+for ((k=0; k<i; k++)); do
+  [[ ${SUM_EXC[k]} -eq 0 && ${SUM_MISS[k]} -eq 0 ]] && ((n_match++)) || true
+done
+
+if [[ $best_idx -ge 0 && $n_match -eq 1 && ${SUM_EXC[best_idx]} -eq 0 && ${SUM_MISS[best_idx]} -eq 0 ]]; then
+  echo "${C_GREEN}${C_BOLD}➜ Best match: ${SUM_LABEL[best_idx]} [$(basename "${SUM_PATH[best_idx]}")]${C_RESET}"
+  echo "  ${C_DIM}All coordinates fit within this reference and every contig was found.${C_RESET}"
+elif [[ $n_match -gt 1 ]]; then
+  echo "${C_YELLOW}${C_BOLD}➜ Ambiguous: $n_match references contain all coordinates.${C_RESET}"
+  echo "  ${C_DIM}The input's max coordinates don't reach far enough to discriminate between them.${C_RESET}"
+elif [[ $best_idx -ge 0 ]]; then
+  echo "${C_YELLOW}${C_BOLD}➜ Closest: ${SUM_LABEL[best_idx]} [$(basename "${SUM_PATH[best_idx]}")]${C_RESET} (fits, but some contigs were not found)"
+else
+  echo "${C_RED}${C_BOLD}➜ No reference contains all coordinates.${C_RESET}"
+  echo "  ${C_DIM}Every candidate has at least one contig where the data exceeds its length — check naming or build.${C_RESET}"
+fi
