@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# check_genomeref.sh — check whether interval/position coordinates in an input
+# check_genomeref — check whether interval/position coordinates in an input
 # file exceed the contig lengths of one or more genome references.
 #
 # For each reference (.fai discovered recursively under a directory) and each
@@ -21,8 +21,8 @@
 # Requires: duckdb (>= 0.9). No other dependencies.
 #
 # Usage:
-#   check_genomeref.sh -r <reference_dir> -i <input_file> [-t <parquet|bim|bed|tsv>]
-#   On CCDB: check_genomeref.sh -r /home/flben/links/projects/rrg-jacquese/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv>]
+#   check_genomeref -r <reference_dir> -i <input_file> [-t <parquet|bim|bed|tsv>]
+#   On CCDB: check_genomeref -r /home/flben/links/projects/rrg-jacquese/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv>]
 #
 # Options:
 #   -r DIR    Directory searched recursively for *.fai index files (required)
