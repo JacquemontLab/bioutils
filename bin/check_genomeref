@@ -23,6 +23,7 @@
 # Usage:
 #   check_genomeref -r <reference_dir> -i <input_file> [-t <parquet|bim|bed|tsv>]
 #   On CCDB: check_genomeref -r /home/flben/links/projects/rrg-jacquese/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv>]
+#   On SD4H: check_genomeref -r /mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/reference_genome -i <input_file> [-t <parquet|bim|bed|tsv>]
 #
 # Options:
 #   -r DIR    Directory searched recursively for *.fai index files (required)
