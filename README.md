@@ -64,6 +64,15 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
   This script compare two CNV datasets to assess Callrate and Precision of those dataset.
 
 
+### expression_utils
+
+* **check_h5ad.py**
+ This script will check if the h5ad is transformed, and how.
+
+* **inspect_h5ad.py**
+ This script quickly inspect an h5ad for you to get an idea of what's in there.
+
+
 ## Program available
 * **nextflow-25.04.2-dist**
   Nextflow version 25.04 executable.
