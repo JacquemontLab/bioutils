@@ -83,8 +83,6 @@ fi
 mapfile -d '' FAIS < <(find "$REF_DIR" -type f -name '*.fai' -print0 | sort -z)
 [[ ${#FAIS[@]} -gt 0 ]] || die "no .fai files found under $REF_DIR"
 
-# Reference label = parent-dir/filename, e.g. GRCh38/....fna.fai -> "GRCh38".
-# Falls back to the .fai basename if the parent isn't informative.
 # Resolves $INPUT to what read_parquet() should scan: the file itself, or a
 # recursive glob when $INPUT is a directory (e.g. a Hive-partitioned dataset
 # with CHROM=chrN/part-*.parquet subfolders).
@@ -96,6 +94,8 @@ parquet_source() {
   fi
 }
 
+# Reference label = parent-dir/filename, e.g. GRCh38/....fna.fai -> "GRCh38".
+# Falls back to the .fai basename if the parent isn't informative.
 ref_label() {
   local f=$1 parent
   parent=$(basename "$(dirname "$f")")
@@ -126,13 +126,24 @@ upper(
 SQL
 }
 
-# Input CTE: produce (chr_display, chr_key, max_end) per chromosome.
-# max_end is the largest coordinate to test against contig length:
+# Detects the input's columns/layout ONCE and caches the resulting
+# "raw AS (...)" body in the global $RAW_CTE.
+#
+# IMPORTANT: this must run as a plain function call in the main shell, not
+# inside a $(...) command substitution. die() calls `exit`, and `exit` inside
+# a command substitution only terminates that subshell — the parent script
+# would otherwise sail on with an empty/partial SQL fragment (this is exactly
+# what produced the earlier "syntax error at or near ','" instead of a clean
+# error message). Running it here, once, up front, makes die() actually abort
+# and avoids re-probing the schema for every reference in the main loop.
+#
+# max_end (aliased "coord" below) is the largest coordinate tested against
+# contig length:
 #   parquet -> MAX(POS) if VCF-like (CHROM/POS/REF/ALT), else MAX("End") (1-based inclusive)
 #   bed     -> MAX(end col) (0-based half-open end == count of bases)
 #   bim     -> MAX(pos)     (point position)
-input_cte() {
-  local nk; nk=$(norm_expr 'raw_chr')
+RAW_CTE=""
+compute_raw_cte() {
   case "$ITYPE" in
     parquet)
       # Detect layout from the schema (case-insensitive column name match):
@@ -140,11 +151,12 @@ input_cte() {
       #   cnvDB    : Chr, Start, End       -> chrom=Chr,   coord=End (1-based inclusive)
       local psrc hdr chr_col coord_col
       psrc=$(parquet_source)
-      # hive_partitioning=false: CHROM/Chr is a real column inside these files,
-      # so we read it directly rather than risk it being shadowed/duplicated
-      # by a Hive partition column of the same name when scanning a directory.
+      # hive_partitioning=true: Spark-style writers drop the partition column
+      # (e.g. CHROM) from the physical file when partitioning by it, so it
+      # only exists via the CHROM=chr1 path segment and must be recovered
+      # from there; it is not duplicated with any real column.
       hdr=$(duckdb -noheader -list <<HSQL 2>/dev/null || true
-SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('$psrc', hive_partitioning=false));
+SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('$psrc', hive_partitioning=true));
 HSQL
 )
       [[ -n $hdr ]] || die "parquet: could not read schema of $psrc"
@@ -158,23 +170,21 @@ HSQL
       fi
       [[ -n $chr_col   ]] || die "parquet: no chromosome column (CHROM/Chr) in [$(printf '%s' "$hdr" | paste -sd, -)]"
       [[ -n $coord_col ]] || die "parquet: no coordinate column (POS/End) in [$(printf '%s' "$hdr" | paste -sd, -)]"
-      cat <<SQL
-raw AS (
+      RAW_CTE=$(cat <<SQL
   SELECT CAST("$chr_col" AS VARCHAR) AS raw_chr, CAST("$coord_col" AS BIGINT) AS coord
-  FROM read_parquet('$psrc', hive_partitioning=false)
-)
+  FROM read_parquet('$psrc', hive_partitioning=true)
 SQL
+)
       ;;
     bim)
       # PLINK .bim: col0=chr col3=bp position, whitespace/tab separated, no header
-      cat <<SQL
-raw AS (
+      RAW_CTE=$(cat <<SQL
   SELECT CAST(column0 AS VARCHAR) AS raw_chr, CAST(column3 AS BIGINT) AS coord
   FROM read_csv('$INPUT', delim='\t', header=false, ignore_errors=true,
                 columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR',
                          'column3':'BIGINT','column4':'VARCHAR','column5':'VARCHAR'})
-)
 SQL
+)
       ;;
     tsv)
       # Delimited text WITH a header. Coordinate columns are matched by name
@@ -199,28 +209,34 @@ HSQL
       fi
       [[ -n $chr_col ]] || die "TSV: no chromosome column found in header [$(printf '%s' "$hdr" | paste -sd, -)]; set CHR_COL=<name>"
       [[ -n $end_col ]] || die "TSV: no end/pos column found in header [$(printf '%s' "$hdr" | paste -sd, -)]; set END_COL=<name>"
-      cat <<SQL
-raw AS (
+      RAW_CTE=$(cat <<SQL
   SELECT CAST("$chr_col" AS VARCHAR) AS raw_chr, CAST("$end_col" AS BIGINT) AS coord
   FROM read_csv('$INPUT', header=true, ignore_errors=true)
-)
 SQL
+)
       ;;
     bed)
       # BED: col0=chr col1=start col2=end; skip comment/track/browser lines.
-      cat <<SQL
-raw AS (
+      RAW_CTE=$(cat <<SQL
   SELECT CAST(column0 AS VARCHAR) AS raw_chr, CAST(column2 AS BIGINT) AS coord
   FROM read_csv('$INPUT', delim='\t', header=false, ignore_errors=true,
                 columns={'column0':'VARCHAR','column1':'BIGINT','column2':'BIGINT'})
   WHERE column0 NOT LIKE '#%' AND column0 <> 'track' AND column0 <> 'browser'
         AND column2 IS NOT NULL
-)
 SQL
+)
       ;;
   esac
-  echo ","
+}
+
+# Input CTE: produce (chr_display, chr_key, max_end) per chromosome, spliced
+# from the $RAW_CTE body cached by compute_raw_cte() (called once, up front).
+input_cte() {
+  local nk; nk=$(norm_expr 'raw_chr')
   cat <<SQL
+raw AS (
+$RAW_CTE
+),
 inp AS (
   SELECT
     any_value(raw_chr) AS chr_display,
@@ -251,6 +267,12 @@ echo "${C_BOLD}Input :${C_RESET} $INPUT  (type: $ITYPE)"
 echo "Coordinate tested: max End/pos per chromosome vs contig length"
 echo "${C_GREEN}exceeds=false${C_RESET} everywhere → data fits that build ; ${C_RED}exceeds=true${C_RESET} → data runs past a contig (wrong build)"
 echo
+
+# Detect input columns/layout once, before touching any reference. Any
+# validation failure here calls die() directly in the main shell (see
+# compute_raw_cte's comment) so the script actually stops instead of
+# limping on with a broken CTE.
+compute_raw_cte
 
 nk_fai=$(norm_expr 'fai_contig')
 
