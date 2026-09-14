@@ -9,7 +9,9 @@
 # identifying which genome build a coordinate set belongs to.
 #
 # Inputs supported (auto-detected by extension):
-#   *.parquet          cnvDB-style: columns Chr, Start, End (1-based inclusive)
+#   *.parquet          Two layouts, auto-detected from the schema (case-insensitive):
+#                         VCF-like : CHROM, POS, REF, ALT -> chrom=CHROM, coord=POS
+#                         cnvDB    : Chr, Start, End       -> chrom=Chr,   coord=End (1-based inclusive)
 #   *.bim              PLINK: <chr snp cm pos a1 a2>, no header (point positions)
 #   *.bed / *.bed.gz   BED: <chr start end ...>, 0-based half-open
 #   *.tsv / *.csv      Delimited WITH header; Chr/Start/End columns (by name)
@@ -106,17 +108,35 @@ SQL
 
 # Input CTE: produce (chr_display, chr_key, max_end) per chromosome.
 # max_end is the largest coordinate to test against contig length:
-#   parquet -> MAX("End")   (1-based inclusive interval end)
+#   parquet -> MAX(POS) if VCF-like (CHROM/POS/REF/ALT), else MAX("End") (1-based inclusive)
 #   bed     -> MAX(end col) (0-based half-open end == count of bases)
 #   bim     -> MAX(pos)     (point position)
 input_cte() {
   local nk; nk=$(norm_expr 'raw_chr')
   case "$ITYPE" in
     parquet)
+      # Detect layout from the schema (case-insensitive column name match):
+      #   VCF-like : CHROM, POS, REF, ALT  -> chrom=CHROM, coord=POS (point position)
+      #   cnvDB    : Chr, Start, End       -> chrom=Chr,   coord=End (1-based inclusive)
+      local hdr chr_col coord_col
+      hdr=$(duckdb -noheader -list <<HSQL 2>/dev/null || true
+SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('$INPUT'));
+HSQL
+)
+      [[ -n $hdr ]] || die "parquet: could not read schema of $INPUT"
+      # has_col NAME -> prints the actual column name matching NAME (case-insensitive), or nothing
+      has_col() { printf '%s\n' "$hdr" | awk -v n="$1" 'tolower($0)==tolower(n){print; exit}'; }
+      if [[ -n $(has_col CHROM) && -n $(has_col POS) && -n $(has_col REF) && -n $(has_col ALT) ]]; then
+        chr_col=$(has_col CHROM); coord_col=$(has_col POS)
+      else
+        chr_col=$(has_col Chr); [[ -n $chr_col ]] || chr_col=$(has_col CHROM)
+        coord_col=$(has_col End)
+      fi
+      [[ -n $chr_col   ]] || die "parquet: no chromosome column (CHROM/Chr) in [$(printf '%s' "$hdr" | paste -sd, -)]"
+      [[ -n $coord_col ]] || die "parquet: no coordinate column (POS/End) in [$(printf '%s' "$hdr" | paste -sd, -)]"
       cat <<SQL
 raw AS (
-  SELECT CAST(COALESCE(*COLUMNS('^(?i)(chrom|chr)$')) AS VARCHAR) AS raw_chr,
-  CAST("End" AS BIGINT) AS coord
+  SELECT CAST("$chr_col" AS VARCHAR) AS raw_chr, CAST("$coord_col" AS BIGINT) AS coord
   FROM read_parquet('$INPUT')
 )
 SQL
