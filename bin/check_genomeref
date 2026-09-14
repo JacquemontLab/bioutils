@@ -115,6 +115,7 @@ input_cte() {
     parquet)
       cat <<SQL
 raw AS (
+  SELECT
   CAST(COALESCE(TRY_CAST(CHR AS VARCHAR), TRY_CAST(CHROM AS VARCHAR)) AS VARCHAR) AS raw_chr,
   CAST("End" AS BIGINT) AS coord
   FROM read_parquet('$INPUT')
