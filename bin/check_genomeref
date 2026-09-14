@@ -9,7 +9,12 @@
 # identifying which genome build a coordinate set belongs to.
 #
 # Inputs supported (auto-detected by extension):
-#   *.parquet          cnvDB-style: columns Chr, Start, End (1-based inclusive)
+#   *.parquet          Two layouts, auto-detected from the schema (case-insensitive):
+#                         VCF-like : CHROM, POS, REF, ALT -> chrom=CHROM, coord=POS
+#                         cnvDB    : Chr, Start, End       -> chrom=Chr,   coord=End (1-based inclusive)
+#                       -i may also be a directory (e.g. a Hive-partitioned dataset such as
+#                       ShortVariantsDB_curated.parquet/CHROM=chr1/part-*.parquet); all
+#                       *.parquet files under it are read together as one input.
 #   *.bim              PLINK: <chr snp cm pos a1 a2>, no header (point positions)
 #   *.bed / *.bed.gz   BED: <chr start end ...>, 0-based half-open
 #   *.tsv / *.csv      Delimited WITH header; Chr/Start/End columns (by name)
@@ -27,7 +32,7 @@
 #
 # Options:
 #   -r DIR    Directory searched recursively for *.fai index files (required)
-#   -i FILE   Input coordinate file (required)
+#   -i FILE   Input coordinate file, or a directory of *.parquet files (required)
 #   -t TYPE   Force input type (parquet|bim|bed|tsv); default: infer from extension
 #   -h        Show this help
 #
@@ -54,7 +59,7 @@ command -v duckdb >/dev/null 2>&1 || { echo "Error: duckdb not found in PATH" >&
 [[ -n $REF_DIR ]] || die "reference directory required (-r); use -h for help"
 [[ -n $INPUT   ]] || die "input file required (-i); use -h for help"
 [[ -d $REF_DIR ]] || die "reference directory not found: $REF_DIR"
-[[ -f $INPUT   ]] || die "input file not found: $INPUT"
+INPUT="${INPUT%/}"   # normalise a trailing slash so extension inference (*.parquet) matches
 
 # ---- infer input type -------------------------------------------------------
 if [[ -z $ITYPE ]]; then
@@ -68,9 +73,26 @@ if [[ -z $ITYPE ]]; then
 fi
 case "$ITYPE" in parquet|bim|bed|tsv) ;; *) die "invalid -t '$ITYPE' (parquet|bim|bed|tsv)";; esac
 
+if [[ -d $INPUT ]]; then
+  [[ $ITYPE == parquet ]] || die "directory input is only supported for parquet datasets (pass -t parquet)"
+elif [[ ! -f $INPUT ]]; then
+  die "input path not found: $INPUT"
+fi
+
 # ---- discover .fai files ----------------------------------------------------
 mapfile -d '' FAIS < <(find "$REF_DIR" -type f -name '*.fai' -print0 | sort -z)
 [[ ${#FAIS[@]} -gt 0 ]] || die "no .fai files found under $REF_DIR"
+
+# Resolves $INPUT to what read_parquet() should scan: the file itself, or a
+# recursive glob when $INPUT is a directory (e.g. a Hive-partitioned dataset
+# with CHROM=chrN/part-*.parquet subfolders).
+parquet_source() {
+  if [[ -d $INPUT ]]; then
+    printf '%s/**/*.parquet' "$INPUT"
+  else
+    printf '%s' "$INPUT"
+  fi
+}
 
 # Reference label = parent-dir/filename, e.g. GRCh38/....fna.fai -> "GRCh38".
 # Falls back to the .fai basename if the parent isn't informative.
@@ -104,32 +126,65 @@ upper(
 SQL
 }
 
-# Input CTE: produce (chr_display, chr_key, max_end) per chromosome.
-# max_end is the largest coordinate to test against contig length:
-#   parquet -> MAX("End")   (1-based inclusive interval end)
+# Detects the input's columns/layout ONCE and caches the resulting
+# "raw AS (...)" body in the global $RAW_CTE.
+#
+# IMPORTANT: this must run as a plain function call in the main shell, not
+# inside a $(...) command substitution. die() calls `exit`, and `exit` inside
+# a command substitution only terminates that subshell — the parent script
+# would otherwise sail on with an empty/partial SQL fragment (this is exactly
+# what produced the earlier "syntax error at or near ','" instead of a clean
+# error message). Running it here, once, up front, makes die() actually abort
+# and avoids re-probing the schema for every reference in the main loop.
+#
+# max_end (aliased "coord" below) is the largest coordinate tested against
+# contig length:
+#   parquet -> MAX(POS) if VCF-like (CHROM/POS/REF/ALT), else MAX("End") (1-based inclusive)
 #   bed     -> MAX(end col) (0-based half-open end == count of bases)
 #   bim     -> MAX(pos)     (point position)
-input_cte() {
-  local nk; nk=$(norm_expr 'raw_chr')
+RAW_CTE=""
+compute_raw_cte() {
   case "$ITYPE" in
     parquet)
-      cat <<SQL
-raw AS (
-  SELECT CAST(Chr AS VARCHAR) AS raw_chr, CAST("End" AS BIGINT) AS coord
-  FROM read_parquet('$INPUT')
+      # Detect layout from the schema (case-insensitive column name match):
+      #   VCF-like : CHROM, POS, REF, ALT  -> chrom=CHROM, coord=POS (point position)
+      #   cnvDB    : Chr, Start, End       -> chrom=Chr,   coord=End (1-based inclusive)
+      local psrc hdr chr_col coord_col
+      psrc=$(parquet_source)
+      # hive_partitioning=true: Spark-style writers drop the partition column
+      # (e.g. CHROM) from the physical file when partitioning by it, so it
+      # only exists via the CHROM=chr1 path segment and must be recovered
+      # from there; it is not duplicated with any real column.
+      hdr=$(duckdb -noheader -list <<HSQL 2>/dev/null || true
+SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('$psrc', hive_partitioning=true));
+HSQL
 )
+      [[ -n $hdr ]] || die "parquet: could not read schema of $psrc"
+      # has_col NAME -> prints the actual column name matching NAME (case-insensitive), or nothing
+      has_col() { printf '%s\n' "$hdr" | awk -v n="$1" 'tolower($0)==tolower(n){print; exit}'; }
+      if [[ -n $(has_col CHROM) && -n $(has_col POS) && -n $(has_col REF) && -n $(has_col ALT) ]]; then
+        chr_col=$(has_col CHROM); coord_col=$(has_col POS)
+      else
+        chr_col=$(has_col Chr); [[ -n $chr_col ]] || chr_col=$(has_col CHROM)
+        coord_col=$(has_col End)
+      fi
+      [[ -n $chr_col   ]] || die "parquet: no chromosome column (CHROM/Chr) in [$(printf '%s' "$hdr" | paste -sd, -)]"
+      [[ -n $coord_col ]] || die "parquet: no coordinate column (POS/End) in [$(printf '%s' "$hdr" | paste -sd, -)]"
+      RAW_CTE=$(cat <<SQL
+  SELECT CAST("$chr_col" AS VARCHAR) AS raw_chr, CAST("$coord_col" AS BIGINT) AS coord
+  FROM read_parquet('$psrc', hive_partitioning=true)
 SQL
+)
       ;;
     bim)
       # PLINK .bim: col0=chr col3=bp position, whitespace/tab separated, no header
-      cat <<SQL
-raw AS (
+      RAW_CTE=$(cat <<SQL
   SELECT CAST(column0 AS VARCHAR) AS raw_chr, CAST(column3 AS BIGINT) AS coord
   FROM read_csv('$INPUT', delim='\t', header=false, ignore_errors=true,
                 columns={'column0':'VARCHAR','column1':'VARCHAR','column2':'VARCHAR',
                          'column3':'BIGINT','column4':'VARCHAR','column5':'VARCHAR'})
-)
 SQL
+)
       ;;
     tsv)
       # Delimited text WITH a header. Coordinate columns are matched by name
@@ -154,28 +209,34 @@ HSQL
       fi
       [[ -n $chr_col ]] || die "TSV: no chromosome column found in header [$(printf '%s' "$hdr" | paste -sd, -)]; set CHR_COL=<name>"
       [[ -n $end_col ]] || die "TSV: no end/pos column found in header [$(printf '%s' "$hdr" | paste -sd, -)]; set END_COL=<name>"
-      cat <<SQL
-raw AS (
+      RAW_CTE=$(cat <<SQL
   SELECT CAST("$chr_col" AS VARCHAR) AS raw_chr, CAST("$end_col" AS BIGINT) AS coord
   FROM read_csv('$INPUT', header=true, ignore_errors=true)
-)
 SQL
+)
       ;;
     bed)
       # BED: col0=chr col1=start col2=end; skip comment/track/browser lines.
-      cat <<SQL
-raw AS (
+      RAW_CTE=$(cat <<SQL
   SELECT CAST(column0 AS VARCHAR) AS raw_chr, CAST(column2 AS BIGINT) AS coord
   FROM read_csv('$INPUT', delim='\t', header=false, ignore_errors=true,
                 columns={'column0':'VARCHAR','column1':'BIGINT','column2':'BIGINT'})
   WHERE column0 NOT LIKE '#%' AND column0 <> 'track' AND column0 <> 'browser'
         AND column2 IS NOT NULL
-)
 SQL
+)
       ;;
   esac
-  echo ","
+}
+
+# Input CTE: produce (chr_display, chr_key, max_end) per chromosome, spliced
+# from the $RAW_CTE body cached by compute_raw_cte() (called once, up front).
+input_cte() {
+  local nk; nk=$(norm_expr 'raw_chr')
   cat <<SQL
+raw AS (
+$RAW_CTE
+),
 inp AS (
   SELECT
     any_value(raw_chr) AS chr_display,
@@ -206,6 +267,12 @@ echo "${C_BOLD}Input :${C_RESET} $INPUT  (type: $ITYPE)"
 echo "Coordinate tested: max End/pos per chromosome vs contig length"
 echo "${C_GREEN}exceeds=false${C_RESET} everywhere → data fits that build ; ${C_RED}exceeds=true${C_RESET} → data runs past a contig (wrong build)"
 echo
+
+# Detect input columns/layout once, before touching any reference. Any
+# validation failure here calls die() directly in the main shell (see
+# compute_raw_cte's comment) so the script actually stops instead of
+# limping on with a broken CTE.
+compute_raw_cte
 
 nk_fai=$(norm_expr 'fai_contig')
 
