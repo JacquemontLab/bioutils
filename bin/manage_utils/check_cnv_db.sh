@@ -11,7 +11,7 @@ if [ -t 1 ]; then B=$'\033[1m'; R=$'\033[0m'; else B=''; R=''; fi
 # ── summary table ──────────────────────────────────────────────────────────
 duckdb -noheader -list <<SQL | column -t -s'|'
 $(
-for cnv in "$ROOT"/*/cn*/*/cnvDB.parquet; do
+for cnv in "$ROOT"/*/cnv/*/cnvDB.parquet; do
     dir=$(dirname "$cnv")
     smp="$dir/sampleDB.tsv"
     name=$(basename "$dir")
@@ -29,12 +29,14 @@ FROM
   (SELECT COUNT(DISTINCT SampleID) AS n,
           COUNT(DISTINCT SampleID) FILTER (
             WHERE SampleID NOT IN (
-              SELECT SampleID FROM read_csv('$smp', delim='\t', header=true)
+              SELECT SampleID FROM read_csv('$smp', delim='\t', header=true,
+                                            types={'SampleID':'VARCHAR'})
               WHERE SampleID IS NOT NULL)
           ) AS missing
    FROM read_parquet('$cnv')) c,
   (SELECT COUNT(DISTINCT SampleID) AS n
-   FROM read_csv('$smp', delim='\t', header=true)) s,
+   FROM read_csv('$smp', delim='\t', header=true,
+                 types={'SampleID':'VARCHAR'})) s,
   (SELECT COUNT(*) = 10 AS ok
    FROM (DESCRIBE SELECT * FROM read_csv('$smp', delim='\t', header=true))
    WHERE column_name IN ('PC1','PC2','PC3','PC4','PC5','PC6','PC7','PC8','PC9','PC10')) pc;

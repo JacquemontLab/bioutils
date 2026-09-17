@@ -26,7 +26,7 @@ if [ -t 1 ]; then B=$'\033[1m'; R=$'\033[0m'; else B=''; R=''; fi
 cohort_required=( "README.md" "metadata_sampleDB.tsv" )
 
 # Subdirectories whose presence identifies a top-level dir as a cohort.
-cohort_markers=( cnv shortvariants expression phenotypic )
+cohort_markers=( cnv shortvariants variants expression phenotypic )
 
 required_items() {
   case "$1" in
@@ -44,6 +44,10 @@ required_items() {
         "exact:ShortVariantsDB_unfiltered_columns_report.pdf" \
         "glob:*_release_note.pdf" \
         "exact:launch_report.txt"
+      ;;
+    variants)
+      printf '%s\n' \
+        "glob:*_release_note.pdf"
       ;;
   esac
 }
@@ -110,7 +114,7 @@ while IFS= read -r docdir; do
   [ "${parts[3]}" = "docs" ] || continue
   cohort="${parts[0]}"
   datatype="${parts[1]}"
-  case "$datatype" in cnv|shortvariants) ;; *) continue ;; esac
+  case "$datatype" in cnv|shortvariants|variants) ;; *) continue ;; esac
 
   dirs_checked=$((dirs_checked+1))
   missing_here=()
@@ -164,7 +168,7 @@ while IFS= read -r docdir; do
   [ "$has_readme" -eq 1 ] && printf '     \342\204\271\357\270\217  README.md present (optional \342\200\224 remove?)\n'
 done < <(
   find "$ROOT" -maxdepth 4 -type d -name docs \
-       \( -path '*/cnv/*' -o -path '*/shortvariants/*' \) | sort
+       \( -path '*/cnv/*' -o -path '*/shortvariants/*' -o -path '*/variants/*' \) | sort
 )
 
 # ---------------------------------------------------------------------------

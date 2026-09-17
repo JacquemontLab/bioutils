@@ -2,20 +2,15 @@
 # sync_reports.sh -- copy docs/*_report.pdf from the DATABASE tree into biodoc
 set -euo pipefail
 
-
 if [[ "${CC_CLUSTER:-}" == "rorqual" ]]; then
-    BIND=/lustre09/project/6008022
+    DST_ROOT=/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_CCDB
 elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1" ]]; then
-    BIND=/mnt/chusj-transcriptomic-cephfs-1
+    DST_ROOT=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_SD4H
 else
-    echo "Unknown site: $(hostname -s)" >&2
-    return 1 2>/dev/null || exit 1
+    DST_ROOT=''
 fi
-export BIND
 
-
-DST_ROOT="$BIND/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_SD4H"
-PATTERN='*_report.pdf'
+PATTERN='*_report.pdf|cnv_dataset_qc.pdf'
 DRYRUN=0
 
 usage() {
@@ -23,8 +18,9 @@ usage() {
 Usage: ${0##*/} [-n] [-p PATTERN] [-d BIODOC_ROOT] <database_root>
 
   -n, --dry-run        show what would be copied, copy nothing
-  -p, --pattern GLOB   file glob inside docs/ (default: $PATTERN)
-  -d, --dest DIR       biodoc root (default: $DST_ROOT)
+  -p, --pattern GLOB   file glob(s) inside docs/, '|'-separated
+                       (default: $PATTERN)
+  -d, --dest DIR       biodoc root (default: ${DST_ROOT:-<none: required on this host>})
   -h, --help           this message
 EOF
     exit "${1:-2}"
@@ -46,7 +42,18 @@ done
 SRC_ROOT="${1%/}"
 DST_ROOT="${DST_ROOT%/}"
 [[ -d $SRC_ROOT ]] || { printf 'not a directory: %s\n' "$SRC_ROOT" >&2; exit 1; }
+[[ -n $DST_ROOT ]] || { printf 'unknown site %s: pass -d BIODOC_ROOT\n' "$(hostname -s)" >&2; exit 1; }
 [[ -d $DST_ROOT ]] || { printf 'not a directory: %s\n' "$DST_ROOT" >&2; exit 1; }
+
+# ---- expand PATTERN ('a|b|c') into a find -name test ------------------------
+find_expr=()
+IFS='|' read -r -a globs <<< "$PATTERN"
+for g in "${globs[@]}"; do
+    [[ -n $g ]] || continue
+    (( ${#find_expr[@]} )) && find_expr+=(-o)
+    find_expr+=(-name "$g")
+done
+(( ${#find_expr[@]} )) || { printf 'empty pattern: %s\n' "$PATTERN" >&2; exit 1; }
 
 (( DRYRUN )) && printf '### DRY RUN -- nothing will be written ###\n\n' >&2
 
@@ -71,7 +78,7 @@ while IFS= read -r -d '' docs; do
                "${pdf#"$SRC_ROOT"/}" "$rel"
         (( DRYRUN )) || cp -pL --no-preserve=ownership -- "$pdf" "$dst/"
         n_copied=$((n_copied+1))
-    done < <(find "$docs" -maxdepth 1 -type f -name "$PATTERN" -print0)
+    done < <(find "$docs" -maxdepth 1 -type f \( "${find_expr[@]}" \) -print0)
 
     (( found )) || printf 'WARN  no %s in %s/docs\n' "$PATTERN" "$rel" >&2
 done < <(find "$SRC_ROOT" -mindepth 4 -maxdepth 4 -type d -name docs -print0)

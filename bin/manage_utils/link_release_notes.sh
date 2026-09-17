@@ -3,18 +3,15 @@
 set -euo pipefail
 
 
+
 if [[ "${CC_CLUSTER:-}" == "rorqual" ]]; then
-    BIND=/lustre09/project/6008022
+    SRC_ROOT=/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_CCDB
 elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1" ]]; then
-    BIND=/mnt/chusj-transcriptomic-cephfs-1
+    SRC_ROOT=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_SD4H
 else
-    echo "Unknown site: $(hostname -s)" >&2
-    return 1 2>/dev/null || exit 1
+    SRC_ROOT=''
 fi
-export BIND
 
-
-SRC_ROOT="$BIND/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_SD4H"
 PATTERN='*_release_note.pdf'
 DRYRUN=0
 RELATIVE=0
@@ -64,7 +61,7 @@ verb=$( (( DRYRUN )) && echo 'WOULD' || echo 'LINK ' )
 while IFS= read -r -d '' leaf; do
     rel="${leaf#"$SRC_ROOT"/}"
     IFS=/ read -r cohort vtype src <<< "$rel"
-    [[ $vtype == cnv || $vtype == shortvariants ]] || continue
+    [[ $vtype == cnv || $vtype == shortvariants || $vtype == variants ]] || continue
 
     docs="$DST_ROOT/$rel/docs"
     if [[ ! -d $docs ]]; then
