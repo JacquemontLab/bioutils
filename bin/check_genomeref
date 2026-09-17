@@ -27,7 +27,7 @@
 #
 # Usage:
 #   check_genomeref -r <reference_dir> -i <input_file> [-t <parquet|bim|bed|tsv>]
-#   On CCDB: check_genomeref -r /home/flben/links/projects/rrg-jacquese/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv>]
+#   On CCDB: check_genomeref -r /lustre09/project/6008022/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv>]
 #   On SD4H: check_genomeref -r /mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/reference_genome -i <input_file> [-t <parquet|bim|bed|tsv>]
 #
 # Options:
@@ -54,6 +54,16 @@ while getopts ":r:i:t:h" opt; do
     \?) die "unknown option -$OPTARG (use -h for help)" ;;
   esac
 done
+
+# ---- default reference dir from site (used only when -r is omitted) ---------
+if [[ -z $REF_DIR ]]; then
+  case "${CC_CLUSTER:-$(hostname -s)}" in
+    rorqual)
+      REF_DIR=/lustre09/project/6008022/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference ;;
+    chusj-transcriptomic-server-1)
+      REF_DIR=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/reference_genome ;;
+  esac
+fi
 
 command -v duckdb >/dev/null 2>&1 || { echo "Error: duckdb not found in PATH" >&2; exit 2; }
 [[ -n $REF_DIR ]] || die "reference directory required (-r); use -h for help"
