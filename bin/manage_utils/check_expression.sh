@@ -2,7 +2,14 @@
 set -uo pipefail
 
 BASE=${PWD}
-COUNT_SCRIPT="count_sample_h5ad.py"
+
+if [[ "${CC_CLUSTER:-}" == "rorqual" ]]; then
+    COUNT_SCRIPT=/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/bioutils/bin/manage_utils/count_sample_h5ad.py
+elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1" ]]; then
+    COUNT_SCRIPT=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/SOFTWARE/bioutils/bin/manage_utils/count_sample_h5ad.py
+else
+    COUNT_SCRIPT=''
+fi
 
 shopt -s nullglob   # empty globs expand to nothing, not to the literal pattern
 
