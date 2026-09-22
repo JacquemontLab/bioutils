@@ -226,13 +226,14 @@ SQL
 )
       ;;
     bed)
-      # BED: col0=chr col1=start col2=end; skip comment/track/browser lines.
+      # BED: col0=chr col1=start col2=end; extra columns (BED4/6/12) are ignored.
+      # Skip comment/track/browser lines.
       RAW_CTE=$(cat <<SQL
-  SELECT CAST(column0 AS VARCHAR) AS raw_chr, CAST(column2 AS BIGINT) AS coord
+  SELECT CAST(column0 AS VARCHAR) AS raw_chr, TRY_CAST(column2 AS BIGINT) AS coord
   FROM read_csv('$INPUT', delim='\t', header=false, ignore_errors=true,
-                columns={'column0':'VARCHAR','column1':'BIGINT','column2':'BIGINT'})
+                all_varchar=true, null_padding=true, strict_mode=false)
   WHERE column0 NOT LIKE '#%' AND column0 <> 'track' AND column0 <> 'browser'
-        AND column2 IS NOT NULL
+        AND TRY_CAST(column2 AS BIGINT) IS NOT NULL
 SQL
 )
       ;;
