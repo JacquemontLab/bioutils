@@ -73,6 +73,11 @@ A collection of commonly used bioinformatics Bash scripts developed and maintain
  This script quickly inspect an h5ad for you to get an idea of what's in there.
 
 
+## manage_utils
+
+Contains scripts that help manage the data, release note, symlink etc.
+
+
 ## Program available
 * **nextflow-25.04.2-dist**
   Nextflow version 25.04 executable.
