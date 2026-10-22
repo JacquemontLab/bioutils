@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# sync_reports.sh -- copy docs/*_report.pdf from the DATABASE tree into biodoc
+# link_biodoc.sh -- copy docs/ reports (*_report.pdf, cnv_dataset_qc.pdf) from
+# the DATABASE tree into biodoc. Source and destination default per site.
 set -euo pipefail
 
 if [[ "${CC_CLUSTER:-}" == "rorqual" ]]; then
+    SRC_ROOT="/lustre09/project/6008022/LAB_WORKSPACE/DATABASE"
     DST_ROOT=/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_CCDB
 elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1" ]]; then
+    SRC_ROOT=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/DATABASE
     DST_ROOT=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_SD4H
 else
+    SRC_ROOT=''
     DST_ROOT=''
 fi
 
@@ -15,8 +19,9 @@ DRYRUN=0
 
 usage() {
     cat >&2 <<EOF
-Usage: ${0##*/} [-n] [-p PATTERN] [-d BIODOC_ROOT] <database_root>
+Usage: ${0##*/} [-n] [-p PATTERN] [-d BIODOC_ROOT] [database_root]
 
+  database_root        DATABASE tree (default: ${SRC_ROOT:-<none: required on this host>})
   -n, --dry-run        show what would be copied, copy nothing
   -p, --pattern GLOB   file glob(s) inside docs/, '|'-separated
                        (default: $PATTERN)
@@ -38,12 +43,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ $# -eq 1 ]] || usage
-SRC_ROOT="${1%/}"
-DST_ROOT="${DST_ROOT%/}"
+[[ $# -le 1 ]] || usage
+(( $# )) && SRC_ROOT=$1
+[[ -n $SRC_ROOT ]] || { printf 'unknown site %s: pass <database_root>\n' "$(hostname -s)" >&2; exit 1; }
 [[ -d $SRC_ROOT ]] || { printf 'not a directory: %s\n' "$SRC_ROOT" >&2; exit 1; }
 [[ -n $DST_ROOT ]] || { printf 'unknown site %s: pass -d BIODOC_ROOT\n' "$(hostname -s)" >&2; exit 1; }
 [[ -d $DST_ROOT ]] || { printf 'not a directory: %s\n' "$DST_ROOT" >&2; exit 1; }
+
+# Resolve symlinks (e.g. ~/links/projects/... on rorqual) so that find descends
+# into the tree and its output paths share the exact $SRC_ROOT/ prefix.
+SRC_ROOT="$(realpath -- "$SRC_ROOT")"
+DST_ROOT="${DST_ROOT%/}"
 
 # ---- expand PATTERN ('a|b|c') into a find -name test ------------------------
 find_expr=()
@@ -56,6 +66,7 @@ done
 (( ${#find_expr[@]} )) || { printf 'empty pattern: %s\n' "$PATTERN" >&2; exit 1; }
 
 (( DRYRUN )) && printf '### DRY RUN -- nothing will be written ###\n\n' >&2
+printf 'SRC  %s\nDST  %s\n\n' "$SRC_ROOT" "$DST_ROOT" >&2
 
 n_copied=0 n_skipped=0
 
@@ -78,7 +89,7 @@ while IFS= read -r -d '' docs; do
                "${pdf#"$SRC_ROOT"/}" "$rel"
         (( DRYRUN )) || cp -pL --no-preserve=ownership -- "$pdf" "$dst/"
         n_copied=$((n_copied+1))
-    done < <(find "$docs" -maxdepth 1 -type f \( "${find_expr[@]}" \) -print0)
+    done < <(find -L "$docs" -maxdepth 1 -type f \( "${find_expr[@]}" \) -print0)
 
     (( found )) || printf 'WARN  no %s in %s/docs\n' "$PATTERN" "$rel" >&2
 done < <(find "$SRC_ROOT" -mindepth 4 -maxdepth 4 -type d -name docs -print0)
