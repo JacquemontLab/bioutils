@@ -27,6 +27,7 @@ set -uo pipefail
 # Configuration
 # --------------------------------------------------------------------------
 if [[ "${CC_CLUSTER:-}" == "rorqual" ]]; then
+    module load apptainer
     BIND=/lustre09/project/6008022
 elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1" ]]; then
     BIND=/mnt/chusj-transcriptomic-cephfs-1
