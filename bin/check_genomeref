@@ -18,22 +18,30 @@
 #   *.bim              PLINK: <chr snp cm pos a1 a2>, no header (point positions)
 #   *.bed / *.bed.gz   BED: <chr start end ...>, 0-based half-open
 #   *.tsv / *.csv      Delimited WITH header; Chr/Start/End columns (by name)
+#   *.vcf / *.gvcf / *.g.vcf (optionally .gz/.bgz)
+#                       Default: reads only the header's ##contig=<ID=..,length=..> lines
+#                       (stops at the first record, so instant even on huge gVCFs) and
+#                       tests declared length == contig length (exact build fingerprint).
+#                       If the header has no ##contig lengths (or VCF_SCAN=1), falls back
+#                       to scanning records: coord = max(POS, INFO/END) per CHROM,
+#                       tested with the usual "exceeds" rule. INFO/END covers gVCF
+#                       reference blocks.
 #
 # Contig matching is naming-agnostic: 'chr1'/'1', and PLINK's 23/24/25/26 for
 # X/Y/XY(PAR)/MT are all normalised to a canonical bare form (1..22,X,Y,MT)
 # for the join, while the input's original contig name is shown in the output.
 #
-# Requires: duckdb (>= 0.9). No other dependencies.
+# Requires: duckdb (>= 0.9). VCF input also uses gzip + awk (coreutils-level).
 #
 # Usage:
-#   check_genomeref -r <reference_dir> -i <input_file> [-t <parquet|bim|bed|tsv>]
-#   On CCDB: check_genomeref -r /lustre09/project/6008022/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv>]
-#   On SD4H: check_genomeref -r /mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/reference_genome -i <input_file> [-t <parquet|bim|bed|tsv>]
+#   check_genomeref -r <reference_dir> -i <input_file> [-t <parquet|bim|bed|tsv|vcf>]
+#   On CCDB: check_genomeref -r /lustre09/project/6008022/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference/ -i <input_file> [-t <parquet|bim|bed|tsv|vcf>]
+#   On SD4H: check_genomeref -r /mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/reference_genome -i <input_file> [-t <parquet|bim|bed|tsv|vcf>]
 #
 # Options:
 #   -r DIR    Directory searched recursively for *.fai index files (required)
 #   -i FILE   Input coordinate file, or a directory of *.parquet files (required)
-#   -t TYPE   Force input type (parquet|bim|bed|tsv); default: infer from extension
+#   -t TYPE   Force input type (parquet|bim|bed|tsv|vcf; 'gvcf' = alias of vcf); default: infer from extension
 #   -h        Show this help
 #
 # Exit codes: 0 ok · 1 usage/IO error · 2 missing dependency
@@ -78,10 +86,12 @@ if [[ -z $ITYPE ]]; then
     *.bim)                  ITYPE=bim ;;
     *.bed|*.bed.gz)         ITYPE=bed ;;
     *.tsv|*.tsv.gz|*.csv|*.csv.gz|*.txt) ITYPE=tsv ;;
-    *) die "cannot infer type from '$INPUT'; pass -t parquet|bim|bed|tsv" ;;
+    *.vcf|*.vcf.gz|*.vcf.bgz|*.gvcf|*.gvcf.gz|*.gvcf.bgz) ITYPE=vcf ;;   # *.g.vcf* matches *.vcf*
+    *) die "cannot infer type from '$INPUT'; pass -t parquet|bim|bed|tsv|vcf" ;;
   esac
 fi
-case "$ITYPE" in parquet|bim|bed|tsv) ;; *) die "invalid -t '$ITYPE' (parquet|bim|bed|tsv)";; esac
+[[ $ITYPE == gvcf ]] && ITYPE=vcf
+case "$ITYPE" in parquet|bim|bed|tsv|vcf) ;; *) die "invalid -t '$ITYPE' (parquet|bim|bed|tsv|vcf)";; esac
 
 if [[ -d $INPUT ]]; then
   [[ $ITYPE == parquet ]] || die "directory input is only supported for parquet datasets (pass -t parquet)"
@@ -136,6 +146,58 @@ upper(
 SQL
 }
 
+# ---- VCF / gVCF -------------------------------------------------------------
+# Comparison applied between the input coordinate and the .fai length.
+# Default "exceeds" (coord > len). VCF header mode switches to exact equality,
+# because ##contig length IS a contig length, not a max observed coordinate.
+CMP_OP='>' CMP_COL=exceeds CMP_WORD=exceeding
+VCF_TMP=""
+
+# awk program shared by both VCF modes; writes "<contig>\t<length_or_maxcoord>".
+#   mode=header : parse ##contig lines, exit at the first record (no full read)
+#   mode=scan   : max(POS, INFO/END) per CHROM over all records
+# ##contig keys may appear in any order (ID, length, assembly, md5, ...).
+# printf %.0f avoids mawk printing large integers in %g notation.
+VCF_AWK='
+BEGIN { FS = "\t" }
+mode == "header" && /^##contig=</ {
+  s = substr($0, 11); sub(/>[[:space:]]*$/, "", s)
+  id = ""; len = ""
+  n = split(s, kv, ",")
+  for (k = 1; k <= n; k++) {
+    if (kv[k] ~ /^ID=/)          id  = substr(kv[k], 4)
+    else if (kv[k] ~ /^length=/) len = substr(kv[k], 8)
+  }
+  if (id != "" && len ~ /^[0-9]+$/) printf "%s\t%s\n", id, len
+  next
+}
+/^#/ { next }
+mode == "header" { exit }
+{
+  e = $2 + 0
+  if (match($8, /(^|;)END=[0-9]+/)) {
+    v = substr($8, RSTART, RLENGTH); sub(/^;?END=/, "", v)
+    if (v + 0 > e) e = v + 0
+  }
+  if (!($1 in m) || e > m[$1]) m[$1] = e
+}
+END { if (mode == "scan") for (c in m) printf "%s\t%.0f\n", c, m[c] }
+'
+
+# vcf_extract MODE -> fills $VCF_TMP. gzip -cdf transparently handles plain,
+# gzip and bgzip input. In header mode awk exits early, so gzip is killed by
+# SIGPIPE (status 141): that is expected and accepted, anything else is fatal.
+vcf_extract() { # $1 = header|scan
+  local -a st
+  set +o pipefail
+  gzip -cdf -- "$INPUT" | awk -v mode="$1" "$VCF_AWK" > "$VCF_TMP"
+  st=("${PIPESTATUS[@]}")
+  set -o pipefail
+  [[ ${st[1]} -eq 0 ]] || die "VCF: awk failed while parsing $INPUT"
+  [[ ${st[0]} -eq 0 || ( $1 == header && ${st[0]} -eq 141 ) ]] \
+    || die "VCF: could not decompress/read $INPUT (gzip exit ${st[0]})"
+}
+
 # Detects the input's columns/layout ONCE and caches the resulting
 # "raw AS (...)" body in the global $RAW_CTE.
 #
@@ -152,6 +214,7 @@ SQL
 #   parquet -> MAX(POS) if VCF-like (CHROM/POS/REF/ALT), else MAX("End") (1-based inclusive)
 #   bed     -> MAX(end col) (0-based half-open end == count of bases)
 #   bim     -> MAX(pos)     (point position)
+#   vcf     -> ##contig length (header mode, compared with =) or MAX(POS, INFO/END) (scan mode)
 RAW_CTE=""
 compute_raw_cte() {
   case "$ITYPE" in
@@ -225,6 +288,28 @@ HSQL
 SQL
 )
       ;;
+    vcf)
+      local mode=header
+      [[ ${VCF_SCAN:-0} == 1 ]] && mode=scan
+      VCF_TMP=$(mktemp "${TMPDIR:-/tmp}/check_genomeref.XXXXXX") || die "cannot create temp file"
+      trap 'rm -f -- "$VCF_TMP"' EXIT
+      vcf_extract "$mode"
+      if [[ $mode == header && ! -s $VCF_TMP ]]; then
+        echo "Warning: no ##contig=<ID=...,length=...> lines in header; scanning all records (slow on large gVCFs)" >&2
+        mode=scan
+        vcf_extract scan
+      fi
+      [[ -s $VCF_TMP ]] || die "VCF: no ##contig lengths and no records found in $INPUT"
+      if [[ $mode == header ]]; then
+        CMP_OP='<>' CMP_COL=len_mismatch CMP_WORD=mismatching
+      fi
+      RAW_CTE=$(cat <<SQL
+  SELECT column0 AS raw_chr, column1 AS coord
+  FROM read_csv('$VCF_TMP', delim='\t', header=false, quote='',
+                columns={'column0':'VARCHAR','column1':'BIGINT'})
+SQL
+)
+      ;;
     bed)
       # BED: col0=chr col1=start col2=end; extra columns (BED4/6/12) are ignored.
       # Skip comment/track/browser lines.
@@ -274,16 +359,22 @@ ORDER_SQL="CASE WHEN chr_key ~ '^[0-9]+\$' THEN CAST(chr_key AS INTEGER)
                 WHEN chr_key='X' THEN 100 WHEN chr_key='Y' THEN 101
                 WHEN chr_key='MT' THEN 102 ELSE 200 END, chr_key"
 
-echo "${C_BOLD}Input :${C_RESET} $INPUT  (type: $ITYPE)"
-echo "Coordinate tested: max End/pos per chromosome vs contig length"
-echo "${C_GREEN}exceeds=false${C_RESET} everywhere → data fits that build ; ${C_RED}exceeds=true${C_RESET} → data runs past a contig (wrong build)"
-echo
-
 # Detect input columns/layout once, before touching any reference. Any
 # validation failure here calls die() directly in the main shell (see
 # compute_raw_cte's comment) so the script actually stops instead of
-# limping on with a broken CTE.
+# limping on with a broken CTE. Runs before the banner because it may
+# switch the comparison mode (VCF header -> exact length match).
 compute_raw_cte
+
+echo "${C_BOLD}Input :${C_RESET} $INPUT  (type: $ITYPE)"
+if [[ $CMP_OP == '<>' ]]; then
+  echo "Length tested: ##contig length declared in the VCF header vs contig length (must be equal)"
+  echo "${C_GREEN}len_mismatch=false${C_RESET} everywhere → header matches that build ; ${C_RED}len_mismatch=true${C_RESET} → different build"
+else
+  echo "Coordinate tested: max End/pos per chromosome vs contig length"
+  echo "${C_GREEN}exceeds=false${C_RESET} everywhere → data fits that build ; ${C_RED}exceeds=true${C_RESET} → data runs past a contig (wrong build)"
+fi
+echo
 
 nk_fai=$(norm_expr 'fai_contig')
 
@@ -309,7 +400,7 @@ SELECT
   fai.len                                      AS contig_len,
   (fai.len IS NULL)                            AS not_in_ref,
   CASE WHEN fai.len IS NULL THEN NULL
-       ELSE inp.max_end > fai.len END          AS exceeds
+       ELSE inp.max_end $CMP_OP fai.len END    AS $CMP_COL
 FROM inp
 LEFT JOIN fai USING (chr_key)
 ORDER BY $ORDER_SQL;
@@ -333,7 +424,7 @@ j AS (
   FROM inp LEFT JOIN fai USING (chr_key)
 )
 SELECT
-  COALESCE(SUM(CASE WHEN len IS NOT NULL AND max_end > len THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN len IS NOT NULL AND max_end $CMP_OP len THEN 1 ELSE 0 END),0),
   COALESCE(SUM(CASE WHEN len IS NULL THEN 1 ELSE 0 END),0),
   COUNT(*)
 FROM j;
@@ -382,7 +473,7 @@ for ((k=0; k<i; k++)); do
   fi
   # short reference name for readability
   printf '  %b  %-28s  %s\n' "$tag" "${SUM_LABEL[k]} [$(basename "${SUM_PATH[k]}")]" \
-    "$(printf '%s exceeding, %s not-in-ref, of %s contigs' \
+    "$(printf "%s $CMP_WORD, %s not-in-ref, of %s contigs" \
         "$([[ $exc -gt 0 ]] && printf '%b%s%b' "$C_RED" "$exc" "$C_RESET" || printf '%s' "$exc")" \
         "$([[ $miss -gt 0 ]] && printf '%b%s%b' "$C_YELLOW" "$miss" "$C_RESET" || printf '%s' "$miss")" \
         "$tot")"
