@@ -68,7 +68,7 @@ if [[ -z $REF_DIR ]]; then
   case "${CC_CLUSTER:-$(hostname -s)}" in
     rorqual)
       REF_DIR=/lustre09/project/6008022/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/array_chip_manifest/genome_reference ;;
-    chusj-transcriptomic-server-1)
+    chusj-transcriptomic-server-1-ha)
       REF_DIR=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/RAW_DATA/Genetic/Reference_Data/reference_genome ;;
   esac
 fi
