@@ -31,7 +31,7 @@ set -uo pipefail
 # --------------------------------------------------------------------------
 if [[ "${CC_CLUSTER:-}" == "rorqual" ]]; then
     BIND=/lustre09/project/6008022
-elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1" ]]; then
+elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1-ha" ]]; then
     BIND=/mnt/chusj-transcriptomic-cephfs-1
 else
     echo "Unknown site: $(hostname -s)" >&2
