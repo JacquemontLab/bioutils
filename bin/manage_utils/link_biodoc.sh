@@ -6,7 +6,7 @@ set -euo pipefail
 if [[ "${CC_CLUSTER:-}" == "rorqual" ]]; then
     SRC_ROOT="/lustre09/project/6008022/LAB_WORKSPACE/DATABASE"
     DST_ROOT=/lustre09/project/6008022/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_CCDB
-elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1" ]]; then
+elif [[ "$(hostname -s)" == "chusj-transcriptomic-server-1-ha" ]]; then
     SRC_ROOT=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/DATABASE
     DST_ROOT=/mnt/chusj-transcriptomic-cephfs-1/LAB_WORKSPACE/SOFTWARE/biodoc/DATABASE_SD4H
 else
